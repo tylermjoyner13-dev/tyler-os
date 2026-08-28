@@ -357,8 +357,10 @@
     const f=e.target.files?.[0]; if(!f)return; const r=new FileReader();
     r.onload=()=>{ try{
       const rows=parseCsv(String(r.result||'')); if(rows.length<2)throw new Error('No rows');
-      const headers=rows[0].map(x=>String(x).trim()); const ix=name=>headers.findIndex(h=>h.toLowerCase()===name.toLowerCase());
-      const col={date:ix('Date'),workout:ix('Workout'),exercise:ix('Exercise'),set:ix('Set'),weight:ix('Weight'),reps:ix('Reps'),notes:ix('Notes'),profile:ix('Profile'),status:ix('Session Status'),warm:ix('Warm-Up Status'),core:ix('Core Status')};
+      const headers=rows[0].map(x=>String(x).trim());
+      const ix=(...names)=>{for(const name of names){const i=headers.findIndex(h=>h.toLowerCase()===name.toLowerCase());if(i>=0)return i;}return -1;};
+      // The original web sheet uses the historical misspelling "Excercise". Accept both spellings.
+      const col={date:ix('Date'),workout:ix('Workout'),exercise:ix('Exercise','Excercise'),set:ix('Set'),weight:ix('Weight'),reps:ix('Reps'),notes:ix('Notes'),profile:ix('Profile'),status:ix('Session Status'),warm:ix('Warm-Up Status'),core:ix('Core Status')};
       if(col.date<0||col.workout<0||col.exercise<0)throw new Error('Expected Workout Log columns were not found');
       const groups=new Map();
       rows.slice(1).forEach(row=>{
@@ -368,22 +370,40 @@
         const meta=P.workouts.find(w=>w.name===workoutName); const week=prof.startDate?L.programWeek(prof.startDate,L.parseLocalDate(date)):(meta?.phase===1?1:meta?.phase===2?5:9);
         const key=[prof.id,date,workoutName].join('|'); if(!groups.has(key))groups.set(key,{prof,date,workoutName,meta,week,rows:[]}); groups.get(key).rows.push(row);
       });
-      let imported=0;
+      let imported=0, legacy=0;
       groups.forEach(g=>{
-        if(!g.meta)return; if(sessionFor(g.prof.id,g.date,g.meta.id))return;
-        const sess=buildSession(g.meta,g.date,g.week); sess.profileId=g.prof.id; sess.startedAt=new Date(L.parseLocalDate(g.date)).toISOString();
+        // Avoid duplicates whether the session came from the current program or older pre-program history.
+        if(state.sessions.some(s=>s.profileId===g.prof.id&&s.date===g.date&&s.workoutName===g.workoutName))return;
+        let sess;
+        if(g.meta){
+          if(sessionFor(g.prof.id,g.date,g.meta.id))return;
+          sess=buildSession(g.meta,g.date,g.week);
+        } else {
+          // Preserve pre-12-week web history as a historical session instead of discarding it.
+          const names=[]; g.rows.forEach(row=>{const n=String(row[col.exercise]||'').trim();if(n&&!names.some(x=>L.canonical(x)===L.canonical(n)))names.push(n);});
+          const exercises=names.map((name,idx)=>{
+            const matching=P.workouts.flatMap(w=>w.exercises).find(x=>L.canonical(x.name)===L.canonical(name));
+            const setNums=g.rows.filter(row=>L.canonical(String(row[col.exercise]||''))===L.canonical(name)).map(row=>Math.max(1,parseInt(row[col.set],10)||1));
+            const count=Math.max(1,...setNums);
+            return {exerciseId:`legacy_${L.canonical(name)}_${idx}`,name,volumeMultiplier:matching?.volumeMultiplier||1,sets:Array.from({length:count},()=>({weight:'',reps:'',done:false}))};
+          });
+          sess={id:L.uid('session'),profileId:g.prof.id,date:g.date,week:g.week,phase:0,slot:0,workoutId:`legacy_${L.canonical(g.workoutName)}`,workoutName:g.workoutName,status:'partial',comments:'',warmupStatus:'skipped',coreStatus:'not-scheduled',exercises,startedAt:new Date(L.parseLocalDate(g.date)).toISOString(),completedAt:null,legacy:true};
+          legacy++;
+        }
+        sess.profileId=g.prof.id; sess.startedAt=new Date(L.parseLocalDate(g.date)).toISOString();
         const notes=[];
         g.rows.forEach(row=>{
           const name=String(row[col.exercise]||'').trim(); const ex=sess.exercises.find(x=>L.canonical(x.name)===L.canonical(name)); if(!ex)return;
           const setN=Math.max(1,parseInt(row[col.set],10)||1); while(ex.sets.length<setN)ex.sets.push({weight:'',reps:'',done:false});
-          ex.sets[setN-1]={weight:String(row[col.weight]??''),reps:String(row[col.reps]??''),done:Boolean(row[col.weight]||row[col.reps])};
+          const weight=col.weight>=0?String(row[col.weight]??''):''; const reps=col.reps>=0?String(row[col.reps]??''):'';
+          ex.sets[setN-1]={weight,reps,done:Boolean(weight||reps)};
           if(col.notes>=0&&row[col.notes])notes.push(String(row[col.notes]).trim());
         });
         const first=g.rows[0]; const st=col.status>=0?String(first[col.status]||'').toLowerCase():''; sess.status=st.includes('complete')?'completed':st.includes('skip')?'skipped':'partial';
         sess.warmupStatus=col.warm>=0&&first[col.warm]?String(first[col.warm]).toLowerCase():'skipped'; sess.coreStatus=col.core>=0&&first[col.core]?String(first[col.core]).toLowerCase():sess.coreStatus; sess.comments=[...new Set(notes.filter(Boolean))].join(' | '); if(sess.status==='completed')sess.completedAt=new Date(L.parseLocalDate(g.date)).toISOString();
         state.sessions.push(sess); imported++;
       });
-      saveState(); toast(`${imported} web workout sessions imported`); setTimeout(()=>go('home'),700);
+      saveState(); toast(`${imported} web workout sessions imported${legacy?` (${legacy} historical)`:''}`); setTimeout(()=>go('home'),900);
     } catch(err){console.error(err);alert('Could not import the Workout Log CSV: '+err.message);} }; r.readAsText(f);
   }
 

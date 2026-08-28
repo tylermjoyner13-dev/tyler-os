@@ -57,3 +57,7 @@ Example: a 30-lb dumbbell press entered as `30 × 10` with multiplier `2` contri
 ## Program progression rule
 
 The active week is derived from each profile's Program Start Date. Completion history is separate from the program calendar. A missed Saturday can remain missed while Monday automatically begins the next program week.
+
+
+## V1.0.1 migration compatibility
+The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` header and preserves pre-program workout history as historical sessions.
