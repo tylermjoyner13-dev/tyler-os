@@ -39,6 +39,9 @@
   function workoutById(id){ return P.workouts.find(w=>w.id===id); }
   function sessionById(id){ return state.sessions.find(s=>s.id===id); }
   function sessionFor(profileId,dateKey,workoutId){ return state.sessions.find(s=>s.profileId===profileId&&s.date===dateKey&&s.workoutId===workoutId&&s.status!=='deleted'); }
+  function sessionForWeekWorkout(profileId,week,workoutId){
+    return state.sessions.filter(s=>s.profileId===profileId&&Number(s.week)===Number(week)&&s.workoutId===workoutId&&s.status!=='deleted').sort((a,b)=>(b.completedAt||b.startedAt||b.date).localeCompare(a.completedAt||a.startedAt||a.date))[0] || null;
+  }
   function sessionsForProfile(){ return state.sessions.filter(s=>s.profileId===state.activeProfileId&&s.status!=='deleted'); }
   function today(){ return new Date(); }
   function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show'); setTimeout(()=>toastEl.classList.remove('show'),1800); }
@@ -119,7 +122,7 @@
     const names=['Mon','Tue','Wed','Fri','Sat'];
     return [1,2,3,4,5].map((slot,i)=>{
       const d=L.scheduledDateForWeekSlot(p.startDate,week,slot); const dk=L.localDateKey(d);
-      const phase=L.phaseForWeek(week); const w=workoutBy(phase,slot); const s=sessionFor(p.id,dk,w.id);
+      const phase=L.phaseForWeek(week); const w=workoutBy(phase,slot); const s=sessionForWeekWorkout(p.id,week,w.id);
       let status='future';
       if(s?.status==='completed') status='done'; else if(s?.status==='partial') status='partial'; else if(s?.status==='skipped') status='missed'; else if(L.diffDays(today(),d)>0) status='missed';
       return {slot,short:names[i],date:dk,workout:w,session:s,status};
@@ -134,8 +137,8 @@
     app.innerHTML=headerHtml('Workouts',`Choose any workout • Week ${week}`)+`
       <div class="card tight"><div class="row between"><button id="prevW" class="btn sm ghost" ${week<=1?'disabled':''}>←</button><div style="text-align:center"><div class="label">Program Week</div><div class="value">${week} of 12</div></div><button id="nextW" class="btn sm ghost" ${week>=12?'disabled':''}>→</button></div></div>
       ${[1,2,3,4,5].map(slot=>{
-        const w=workoutBy(phase,slot); const d=L.scheduledDateForWeekSlot(p.startDate,week,slot); const dk=L.localDateKey(d); const s=sessionFor(p.id,dk,w.id);
-        return `<div class="workout-card ${L.localDateKey(today())===dk?'today':''}"><div class="row between"><div><div class="label">Slot ${slot} • ${esc(w.day)}</div><div class="value">${esc(w.name)}</div><div class="small muted">${fmtDate(dk)} • ${w.exercises.length} exercises</div></div>${s?`<span class="pill ${s.status==='completed'?'green':s.status==='partial'?'amber':'red'}">${esc(s.status)}</span>`:''}</div><button class="btn primary full startChosen" data-id="${w.id}" data-date="${dk}" data-week="${week}" style="margin-top:10px">${s?.status==='partial'?'Resume':s?.status==='completed'?'View / Repeat':'Start'}</button></div>`;
+        const w=workoutBy(phase,slot); const d=L.scheduledDateForWeekSlot(p.startDate,week,slot); const dk=L.localDateKey(d); const s=sessionForWeekWorkout(p.id,week,w.id); const shownDate=s?.date||dk;
+        return `<div class="workout-card ${L.localDateKey(today())===shownDate?'today':''}"><div class="row between"><div><div class="label">Slot ${slot} • ${esc(w.day)}</div><div class="value">${esc(w.name)}</div><div class="small muted">${fmtDate(shownDate)}${s&&s.date!==dk?' • actually trained':''} • ${w.exercises.length} exercises</div></div>${s?`<span class="pill ${s.status==='completed'?'green':s.status==='partial'?'amber':'red'}">${esc(s.status)}</span>`:''}</div><button class="btn primary full startChosen" data-id="${w.id}" data-date="${s?.date||dk}" data-week="${week}" style="margin-top:10px">${s?.status==='partial'?'Resume':s?.status==='completed'?'View / Repeat':'Start'}</button></div>`;
       }).join('')}
       ${navHtml('workouts')}`;
     document.getElementById('prevW').onclick=()=>{selectedWeek=Math.max(1,week-1);renderWorkouts()};
@@ -372,11 +375,11 @@
       });
       let imported=0, legacy=0;
       groups.forEach(g=>{
-        // Avoid duplicates whether the session came from the current program or older pre-program history.
-        if(state.sessions.some(s=>s.profileId===g.prof.id&&s.date===g.date&&s.workoutName===g.workoutName))return;
+        // Re-import is authoritative for an exact Profile + Date + Workout.
+        // Remove any mobile test/copy or prior import for that exact historical session, then rebuild from the CSV.
+        state.sessions = state.sessions.filter(s=>!(s.profileId===g.prof.id&&s.date===g.date&&(s.workoutName===g.workoutName||(g.meta&&s.workoutId===g.meta.id))));
         let sess;
         if(g.meta){
-          if(sessionFor(g.prof.id,g.date,g.meta.id))return;
           sess=buildSession(g.meta,g.date,g.week);
         } else {
           // Preserve pre-12-week web history as a historical session instead of discarding it.
@@ -390,7 +393,7 @@
           sess={id:L.uid('session'),profileId:g.prof.id,date:g.date,week:g.week,phase:0,slot:0,workoutId:`legacy_${L.canonical(g.workoutName)}`,workoutName:g.workoutName,status:'partial',comments:'',warmupStatus:'skipped',coreStatus:'not-scheduled',exercises,startedAt:new Date(L.parseLocalDate(g.date)).toISOString(),completedAt:null,legacy:true};
           legacy++;
         }
-        sess.profileId=g.prof.id; sess.startedAt=new Date(L.parseLocalDate(g.date)).toISOString();
+        sess.profileId=g.prof.id; sess.importedFromWeb=true; sess.startedAt=new Date(L.parseLocalDate(g.date)).toISOString();
         const notes=[];
         g.rows.forEach(row=>{
           const name=String(row[col.exercise]||'').trim(); const ex=sess.exercises.find(x=>L.canonical(x.name)===L.canonical(name)); if(!ex)return;
@@ -403,7 +406,7 @@
         sess.warmupStatus=col.warm>=0&&first[col.warm]?String(first[col.warm]).toLowerCase():'skipped'; sess.coreStatus=col.core>=0&&first[col.core]?String(first[col.core]).toLowerCase():sess.coreStatus; sess.comments=[...new Set(notes.filter(Boolean))].join(' | '); if(sess.status==='completed')sess.completedAt=new Date(L.parseLocalDate(g.date)).toISOString();
         state.sessions.push(sess); imported++;
       });
-      saveState(); toast(`${imported} web workout sessions imported${legacy?` (${legacy} historical)`:''}`); setTimeout(()=>go('home'),900);
+      saveState(); toast(`${imported} web sessions synced${legacy?` (${legacy} historical)`:''}`); setTimeout(()=>go('home'),900);
     } catch(err){console.error(err);alert('Could not import the Workout Log CSV: '+err.message);} }; r.readAsText(f);
   }
 

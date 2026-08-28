@@ -61,3 +61,8 @@ The active week is derived from each profile's Program Start Date. Completion hi
 
 ## V1.0.1 migration compatibility
 The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` header and preserves pre-program workout history as historical sessions.
+
+
+## V1.2 migration fixes
+- Historical sessions are matched to program weeks by actual logged workout, not scheduled weekday.
+- Re-importing the Web Workout Log CSV replaces the exact Profile + Date + Workout session, preventing duplicates and removing same-day mobile test copies when the CSV contains the real workout.
