@@ -23,6 +23,7 @@
   let selectedWeek = null;
   let selectedWorkoutId = null;
   let restTimer = null;
+  const autoRestTriggered = new Set();
   let guideTimer = null;
 
   function loadState(){
@@ -52,7 +53,7 @@
       ${[['home','Home'],['workouts','Workouts'],['review','Weekly'],['settings','Settings']].map(([v,n])=>`<button data-nav="${v}" class="${active===v?'active':''}">${n}</button>`).join('')}
     </nav>`;
   }
-  function headerHtml(title='Tyler OS',sub='Mobile V1'){
+  function headerHtml(title='Tyler OS',sub='Mobile V1.3'){
     return `<div class="header"><div class="brand"><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><span class="pill gray">${esc(activeProfile().name)}</span></div>`;
   }
   function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); }
@@ -187,9 +188,47 @@
   }
   function sessionVolume(s){ return L.sessionVolume(s,(id)=>{ const w=workoutMetaForSession(s); return w?.exercises.find(x=>x.id===id); }); }
   function previousExercise(s,exName){
-    const candidates=sessionsForProfile().filter(x=>x.status==='completed'&&x.workoutId===s.workoutId&&x.id!==s.id&&x.date<s.date).sort((a,b)=>b.date.localeCompare(a.date));
+    const candidates=sessionsForProfile().filter(x=>x.status==='completed'&&x.workoutId===s.workoutId&&x.id!==s.id&&x.date<s.date).sort((a,b)=>(b.completedAt||b.date).localeCompare(a.completedAt||a.date));
     for(const old of candidates){ const ex=old.exercises.find(e=>L.canonical(e.name)===L.canonical(exName)); if(ex) return {date:old.date,ex}; }
     return null;
+  }
+
+  function numeric(v){
+    const t=String(v??'').trim(); if(t==='') return null; const n=Number(t); return Number.isFinite(n)?n:null;
+  }
+  function progressionPlan(meta,prev){
+    const min=Number(meta.minReps)||0, top=Number(meta.topReps)||0, inc=Number(meta.increment)||0;
+    const priorSets=prev?.ex?.sets||[];
+    return Array.from({length:Number(meta.sets)||priorSets.length||0},(_,idx)=>{
+      const prior=priorSets[idx]||null; const pw=numeric(prior?.weight), pr=numeric(prior?.reps);
+      if(pw===null||pr===null||pr<=0) return {set:idx+1,status:'baseline',previousWeight:pw,previousReps:pr,recommendedWeight:pw,targetMin:min,targetMax:top,label:`${min}–${top} reps`};
+      if(top>0&&pr>=top&&inc>0) return {set:idx+1,status:'increase',previousWeight:pw,previousReps:pr,recommendedWeight:pw+inc,targetMin:min,targetMax:top,label:`${pw+inc} lb × ${min}+`};
+      if(top>0&&pr>=top) return {set:idx+1,status:'hold',previousWeight:pw,previousReps:pr,recommendedWeight:pw,targetMin:top,targetMax:top,label:`${pw} lb × ${top}`};
+      const nextRep=Math.min(top||pr+1,pr+1);
+      return {set:idx+1,status:'build',previousWeight:pw,previousReps:pr,recommendedWeight:pw,targetMin:nextRep,targetMax:top||nextRep,label:`${pw} lb × ${nextRep}${top&&nextRep<top?`–${top}`:''}`};
+    });
+  }
+  function resultForSet(meta,plan,set){
+    const w=numeric(set?.weight), r=numeric(set?.reps); if(w===null||r===null||r<=0) return {status:'blank',label:''};
+    const min=Number(meta.minReps)||0, top=Number(meta.topReps)||0;
+    if(!plan||plan.status==='baseline'||plan.previousWeight===null||plan.previousReps===null){
+      if((!min||r>=min)&&(!top||r<=top)) return {status:'baseline',label:'Baseline set logged'};
+      return {status:'build',label:`Aim for ${min}${top?`–${top}`:''} reps`};
+    }
+    const pw=Number(plan.previousWeight), pr=Number(plan.previousReps);
+    if(w>pw&&r>=min) return {status:'success',label:`Successful • +${fmtWeight(w-pw)} lb`};
+    if(w===pw&&r>pr) return {status:'success',label:`Successful • +${r-pr} rep${r-pr===1?'':'s'}`};
+    if(w>pw&&r<min) return {status:'build',label:`Heavier, but need ${min}+ reps`};
+    if(w===pw&&r===pr) return {status:'matched',label:'Matched last workout'};
+    if(w===pw&&r<pr) return {status:'build',label:`${pr-r} rep${pr-r===1?'':'s'} below last time`};
+    if(w<pw&&r>=min) return {status:'build',label:'Lighter than last workout'};
+    return {status:'build',label:'Keep building'};
+  }
+  function fmtWeight(n){ return Number.isInteger(Number(n))?String(Number(n)):Number(n).toFixed(1).replace(/\.0$/,''); }
+  function coachingHtml(meta,prev){
+    const plans=progressionPlan(meta,prev);
+    if(!prev) return `<div class="coach-box"><div class="coach-title">Suggested progression</div><div class="small">Establish a clean baseline at ${meta.minReps}–${meta.topReps} reps.</div></div>`;
+    return `<div class="coach-box"><div class="coach-title">Suggested progression</div>${plans.map(p=>`<div class="coach-set"><strong>S${p.set}</strong><span>${esc(p.label)}</span></div>`).join('')}</div>`;
   }
 
   function renderWorkout(){
@@ -232,30 +271,55 @@
     return `<div class="small muted">Previous ${fmtDate(prev.date)}: ${prev.ex.sets.map((x,i)=>`S${i+1} ${x.weight||'—'}×${x.reps||'—'}`).join(' • ')}</div>`;
   }
   function exHeader(meta,ex){
-    return `<h3>${esc(ex.name)} ${Number(ex.volumeMultiplier||meta.volumeMultiplier||1)!==1?`<span class="pill">Volume ×${ex.volumeMultiplier||meta.volumeMultiplier}</span>`:''}</h3><div class="meta">${meta.sets} sets • ${meta.minReps}–${meta.topReps} reps • Rest ${esc(meta.rest||'—')}</div>${meta.notes?`<div class="small">${esc(meta.notes)}</div>`:''}`;
+    return `<h3>${esc(ex.name)} ${Number(ex.volumeMultiplier||meta.volumeMultiplier||1)!==1?`<span class="pill">Volume ×${ex.volumeMultiplier||meta.volumeMultiplier}</span>`:''}</h3><div class="meta">${meta.sets} sets • ${meta.minReps}–${meta.topReps} reps • Rest ${esc(meta.rest||'—')}</div>${meta.notes?`<div class="coach-note"><strong>Coach:</strong> ${esc(meta.notes)}</div>`:''}`;
   }
-  function setRows(s,ex,readOnly,compact=false){
-    return ex.sets.map((set,idx)=>`<div class="set-row" data-ex="${esc(ex.exerciseId)}" data-set="${idx}"><div class="set-num">${idx+1}</div><div><input ${readOnly?'disabled':''} inputmode="decimal" type="number" step="0.5" class="weight" value="${esc(set.weight)}" placeholder="0"><div class="unit">lb</div></div><div><input ${readOnly?'disabled':''} inputmode="numeric" type="number" step="1" class="reps" value="${esc(set.reps)}" placeholder="0"><div class="unit">reps</div></div><button ${readOnly?'disabled':''} class="check ${set.done?'done':''}" aria-label="set done">${set.done?'✓':'○'}</button></div>`).join('');
+  function setRows(s,ex,meta,prev,readOnly,compact=false){
+    const plans=progressionPlan(meta,prev);
+    return ex.sets.map((set,idx)=>{ const result=resultForSet(meta,plans[idx],set); return `<div class="set-wrap"><div class="set-row" data-ex="${esc(ex.exerciseId)}" data-set="${idx}"><div class="set-num">${idx+1}</div><div><input ${readOnly?'disabled':''} inputmode="decimal" type="number" step="0.5" class="weight" value="${esc(set.weight)}" placeholder="0"><div class="unit">lb</div></div><div><input ${readOnly?'disabled':''} inputmode="numeric" type="number" step="1" class="reps" value="${esc(set.reps)}" placeholder="0"><div class="unit">reps</div></div><button ${readOnly?'disabled':''} class="check ${set.done?'done':''}" aria-label="set done">${set.done?'✓':'○'}</button></div><div class="set-result ${result.status}" data-result-for="${esc(ex.exerciseId)}-${idx}">${esc(result.label)}</div></div>`; }).join('');
   }
   function renderSingleExercise(s,ex,meta,readOnly){
     const prev=previousExercise(s,ex.name);
-    return `<div class="exercise">${exHeader(meta,ex)}<hr>${previousHtml(prev)}${setRows(s,ex,readOnly)}${!readOnly?`<button class="btn sm ghost restBtn" data-rest="${esc(meta.rest)}" data-next="${esc(nextExerciseName(s,ex.exerciseId))}">Rest</button>`:''}</div>`;
+    return `<div class="exercise">${exHeader(meta,ex)}<hr>${previousHtml(prev)}${coachingHtml(meta,prev)}${setRows(s,ex,meta,prev,readOnly)}</div>`;
   }
   function renderSuperset(s,items,readOnly){
-    const [a,b]=items;
-    return `<div class="exercise superset"><div class="pill">Superset ${esc(a[1].group)}</div><div>${exHeader(a[1],a[0])}${previousHtml(previousExercise(s,a[0].name))}${setRows(s,a[0],readOnly,true)}</div><hr><div>${exHeader(b[1],b[0])}${previousHtml(previousExercise(s,b[0].name))}${setRows(s,b[0],readOnly,true)}</div>${!readOnly?`<button class="btn sm primary restBtn" data-rest="${esc(b[1].rest)}" data-next="${esc(nextExerciseName(s,b[0].exerciseId))}">Rest after pair</button>`:''}</div>`;
+    const [a,b]=items; const prevA=previousExercise(s,a[0].name), prevB=previousExercise(s,b[0].name);
+    return `<div class="exercise superset"><div class="pill">Superset ${esc(a[1].group)}</div><div>${exHeader(a[1],a[0])}${previousHtml(prevA)}${coachingHtml(a[1],prevA)}${setRows(s,a[0],a[1],prevA,readOnly,true)}</div><hr><div>${exHeader(b[1],b[0])}${previousHtml(prevB)}${coachingHtml(b[1],prevB)}${setRows(s,b[0],b[1],prevB,readOnly,true)}</div></div>`;
   }
   function nextExerciseName(s,exerciseId){ const i=s.exercises.findIndex(e=>e.exerciseId===exerciseId); return i>=0&&i<s.exercises.length-1?s.exercises[i+1].name:'Core / Finish'; }
 
   function bindSetInputs(s){
+    // Existing populated sets should never auto-trigger a timer just because the screen re-rendered.
+    s.exercises.forEach(ex=>ex.sets.forEach((set,idx)=>{ if(set.weight||set.reps) autoRestTriggered.add(`${s.id}|${ex.exerciseId}|${idx}`); }));
     document.querySelectorAll('.set-row').forEach(row=>{
-      const ex=s.exercises.find(e=>e.exerciseId===row.dataset.ex); const set=ex.sets[Number(row.dataset.set)];
+      const ex=s.exercises.find(e=>e.exerciseId===row.dataset.ex); const idx=Number(row.dataset.set); const set=ex.sets[idx]; const meta=metaForExercise(s,ex); const prev=previousExercise(s,ex.name); const plans=progressionPlan(meta,prev);
       const weight=row.querySelector('.weight'), reps=row.querySelector('.reps'), check=row.querySelector('.check');
-      const update=()=>{ set.weight=weight.value; set.reps=reps.value; saveState(); updateVolume(s); };
+      const resultEl=row.parentElement.querySelector('.set-result');
+      const update=()=>{ set.weight=weight.value; set.reps=reps.value; const result=resultForSet(meta,plans[idx],set); if(resultEl){resultEl.className=`set-result ${result.status}`;resultEl.textContent=result.label;} saveState(); updateVolume(s); };
       weight.addEventListener('input',update); reps.addEventListener('input',update);
+      const commit=()=>{ update(); if(weight.value!==''&&reps.value!==''){ set.done=true;check.classList.add('done');check.textContent='✓';saveState(); maybeAutoRest(s,ex,meta,idx); } };
+      reps.addEventListener('change',commit); reps.addEventListener('blur',commit);
       check.onclick=()=>{set.done=!set.done;check.classList.toggle('done',set.done);check.textContent=set.done?'✓':'○';saveState();updateVolume(s)};
     });
-    document.querySelectorAll('.restBtn').forEach(b=>b.onclick=()=>startRest(parseRestSeconds(b.dataset.rest),b.dataset.next));
+  }
+
+  function supersetPartner(s,ex){
+    const meta=metaForExercise(s,ex); if(!meta.group)return null; const index=s.exercises.findIndex(e=>e.exerciseId===ex.exerciseId); return s.exercises.find((candidate,i)=>i!==index&&metaForExercise(s,candidate).group===meta.group)||null;
+  }
+  function maybeAutoRest(s,ex,meta,setIdx){
+    const key=`${s.id}|${ex.exerciseId}|${setIdx}`; if(autoRestTriggered.has(key))return;
+    const reps=numeric(ex.sets[setIdx]?.reps), weight=numeric(ex.sets[setIdx]?.weight); if(reps===null||weight===null)return;
+    if(meta.group){
+      const partner=supersetPartner(s,ex); if(!partner)return; const exIndex=s.exercises.findIndex(e=>e.exerciseId===ex.exerciseId), partnerIndex=s.exercises.findIndex(e=>e.exerciseId===partner.exerciseId);
+      // Only the second movement in the pair starts rest.
+      if(exIndex<partnerIndex)return;
+      const partnerSet=partner.sets[setIdx]; if(!partnerSet||numeric(partnerSet.reps)===null||numeric(partnerSet.weight)===null)return;
+      autoRestTriggered.add(key);
+      if(setIdx>=Math.min(ex.sets.length,partner.sets.length)-1){toast(`Next: ${nextExerciseName(s,ex.exerciseId)}`);return;}
+      startRest(parseRestSeconds(meta.rest),`${partner.name} • Set ${setIdx+2}`); return;
+    }
+    autoRestTriggered.add(key);
+    if(setIdx>=ex.sets.length-1){toast(`Next: ${nextExerciseName(s,ex.exerciseId)}`);return;}
+    startRest(parseRestSeconds(meta.rest),`${ex.name} • Set ${setIdx+2}`);
   }
   function syncSessionFromInputs(){
     const s=activeSession(); if(!s||s.status==='completed') return;
@@ -267,11 +331,19 @@
     const s=String(str||''); const nums=(s.match(/\d+(?:\.\d+)?/g)||[]).map(Number); if(!nums.length)return 60; const max=Math.max(...nums); return /min/i.test(s)?Math.round(max*60):Math.round(max);
   }
   function startRest(seconds,next){
-    stopRest(); const el=document.getElementById('restTimer'); if(!el)return; let left=seconds;
-    const draw=()=>{el.classList.remove('hidden');el.innerHTML=`<div class="row between"><div><div class="label" style="color:#9ca3af">Rest</div><div class="time">${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}</div></div><div class="small" style="text-align:right">Next<br><strong>${esc(next||'Continue')}</strong></div><button id="closeRest" class="btn sm ghost">×</button></div>`;document.getElementById('closeRest').onclick=stopRest;};
-    draw(); restTimer=setInterval(()=>{left--; if(left<=0){stopRest();toast('Rest complete'); if(navigator.vibrate)navigator.vibrate([150,80,150]);}else draw();},1000);
+    stopRest(); const el=document.getElementById('restTimer'); if(!el)return;
+    restTimer={left:Math.max(1,Number(seconds)||60),total:Math.max(1,Number(seconds)||60),next:next||'Continue',paused:false,interval:null};
+    const tick=()=>{ if(!restTimer||restTimer.paused)return; restTimer.left--; if(restTimer.left<=0){stopRest();toast('Rest complete'); if(navigator.vibrate)navigator.vibrate([150,80,150]);return;} drawRest(); };
+    restTimer.interval=setInterval(tick,1000); drawRest();
   }
-  function stopRest(){ if(restTimer){clearInterval(restTimer);restTimer=null;} const el=document.getElementById('restTimer'); if(el)el.classList.add('hidden'); }
+  function drawRest(){
+    const el=document.getElementById('restTimer'); if(!el||!restTimer)return; const r=restTimer;
+    el.classList.remove('hidden'); el.innerHTML=`<div class="rest-layout"><div><div class="label" style="color:#9ca3af">${r.paused?'Rest paused':'Rest'}</div><div class="time">${Math.floor(r.left/60)}:${String(r.left%60).padStart(2,'0')}</div></div><div class="small rest-next">Next<br><strong>${esc(r.next)}</strong></div><div class="rest-controls"><button id="pauseRest" class="btn sm ghost">${r.paused?'Resume':'Pause'}</button><button id="resetRest" class="btn sm ghost">Reset</button><button id="skipRest" class="btn sm ghost">Skip</button></div></div>`;
+    document.getElementById('pauseRest').onclick=()=>{if(!restTimer)return;restTimer.paused=!restTimer.paused;drawRest();};
+    document.getElementById('resetRest').onclick=()=>{if(!restTimer)return;restTimer.left=restTimer.total;restTimer.paused=false;drawRest();};
+    document.getElementById('skipRest').onclick=stopRest;
+  }
+  function stopRest(){ if(restTimer?.interval)clearInterval(restTimer.interval); restTimer=null; const el=document.getElementById('restTimer'); if(el)el.classList.add('hidden'); }
 
   function attemptFinish(s){
     syncSessionFromInputs();
@@ -335,7 +407,7 @@
       <div class="card"><div class="label">Active Profile</div><select id="profileSelect">${state.profiles.map(x=>`<option value="${esc(x.id)}" ${x.id===state.activeProfileId?'selected':''}>${esc(x.name)}</option>`).join('')}</select><div class="label" style="margin-top:14px">Program Start Date</div><input id="startDate" type="date" value="${esc(p.startDate||'')}"><p class="small muted">The calendar controls Week 1–12. Missing a workout does not freeze program progress.</p></div>
       <div class="card"><div class="label">Add Profile</div><div class="grid2"><input id="newProfile" placeholder="Name"><button id="addProfile" class="btn primary">Add</button></div></div>
       <div class="card"><div class="label">Backup / Migration</div><p class="small muted">Data is stored locally on this device. Export a backup before clearing browser data or changing phones.</p><div class="grid2"><button id="exportData" class="btn ghost">Export JSON</button><button id="importData" class="btn ghost">Import JSON</button></div><button id="importWebLog" class="btn ghost full" style="margin-top:10px">Import Web Workout Log CSV</button><input id="importFile" class="hidden" type="file" accept="application/json"><input id="webLogFile" class="hidden" type="file" accept=".csv,text/csv"></div>
-      <div class="card"><div class="label">Mobile V1 Fixes</div><p class="small">✓ Reactive volume recalculation<br>✓ Per-exercise volume multipliers<br>✓ Weekly comments review<br>✓ Calendar-based program progression</p></div>
+      <div class="card"><div class="label">Mobile V1.3 Workout Experience</div><p class="small">✓ Automatic rest after committed sets<br>✓ Pause / Resume / Reset / Skip rest controls<br>✓ Exercise coaching notes<br>✓ Set-by-set suggested progression<br>✓ Successful set = more reps at same weight or more weight at minimum reps</p></div>
       ${navHtml('settings')}`;
     document.getElementById('profileSelect').onchange=e=>{state.activeProfileId=e.target.value;state.activeSessionId=null;selectedWeek=null;saveState();renderSettings()};
     document.getElementById('startDate').onchange=e=>{p.startDate=e.target.value;selectedWeek=null;saveState();toast('Program calendar updated')};

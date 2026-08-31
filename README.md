@@ -66,3 +66,13 @@ The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` 
 ## V1.2 migration fixes
 - Historical sessions are matched to program weeks by actual logged workout, not scheduled weekday.
 - Re-importing the Web Workout Log CSV replaces the exact Profile + Date + Workout session, preventing duplicates and removing same-day mobile test copies when the CSV contains the real workout.
+
+
+## V1.3 workout experience
+- Rest starts automatically when a set's reps are committed; supersets rest only after the second movement in the pair.
+- Final sets/rounds show the next movement instead of starting an unnecessary rest.
+- Active rest timer includes Pause/Resume, Reset, and Skip controls.
+- Coaching notes are surfaced on each exercise card.
+- Set-by-set progression suggestions use the comparable set from the prior completed workout.
+- A successful set is recognized when reps improve at the same weight, or weight increases while at least the programmed minimum reps are achieved.
+- Hitting the top of the rep range earns the next programmed load increase when an increment is assigned.
