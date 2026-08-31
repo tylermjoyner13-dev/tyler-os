@@ -37,7 +37,8 @@ window.TYLER_PROGRAM = {
           "increment": 5.0,
           "warmup": "Scap pulls + easy pull-up/assistance set",
           "notes": "Use assistance or bodyweight until weighted sets fit range",
-          "volumeMultiplier": 1
+          "volumeMultiplier": 1,
+          "bodyweightLoad": true
         },
         {
           "id": "p1-s1-barbell-row",
@@ -400,7 +401,8 @@ window.TYLER_PROGRAM = {
           "increment": 0,
           "warmup": "Bodyweight warmup if needed",
           "notes": "Use assistance or added weight as appropriate",
-          "volumeMultiplier": 1
+          "volumeMultiplier": 1,
+          "bodyweightLoad": true
         }
       ],
       "id": "p1-s4",
@@ -860,7 +862,8 @@ window.TYLER_PROGRAM = {
           "increment": 5,
           "warmup": "1 easy set",
           "notes": "Use assistance or added load as needed to stay in range",
-          "volumeMultiplier": 1
+          "volumeMultiplier": 1,
+          "bodyweightLoad": true
         },
         {
           "id": "p2-s4-db-pullover",
@@ -920,7 +923,8 @@ window.TYLER_PROGRAM = {
           "increment": 0,
           "warmup": "Bodyweight warmup if needed",
           "notes": "Assistance or added weight as needed; stop before shoulder discomfort",
-          "volumeMultiplier": 1
+          "volumeMultiplier": 1,
+          "bodyweightLoad": true
         }
       ],
       "id": "p2-s4",
@@ -1369,7 +1373,8 @@ window.TYLER_PROGRAM = {
           "increment": 0.0,
           "warmup": "Bodyweight warmup if needed",
           "notes": "AMRAP within clean 8\u201315 range; use assistance if needed",
-          "volumeMultiplier": 1
+          "volumeMultiplier": 1,
+          "bodyweightLoad": true
         }
       ],
       "id": "p3-s3",

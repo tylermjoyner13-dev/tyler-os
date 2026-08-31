@@ -43,14 +43,24 @@
   function volumeForSet(weight,reps,multiplier=1){
     const w=Number(weight), r=Number(reps), m=Number(multiplier)||1;
     if(!Number.isFinite(w)||!Number.isFinite(r)) return 0;
-    return w*r*m;
+    return Math.max(0,w)*r*m;
   }
   function sessionVolume(session, exerciseLookup){
     if(!session||!Array.isArray(session.exercises)) return 0;
     return session.exercises.reduce((sum,ex)=>{
       const meta=exerciseLookup?exerciseLookup(ex.exerciseId):null;
       const mult=Number(ex.volumeMultiplier || meta?.volumeMultiplier || 1);
-      return sum+(ex.sets||[]).reduce((s,set)=>s+volumeForSet(set.weight,set.reps,mult),0);
+      const bodyweightLoad=!!(ex.bodyweightLoad||meta?.bodyweightLoad);
+      const bw=Number(session.bodyWeight);
+      return sum+(ex.sets||[]).reduce((s,set)=>{
+        const reps=Number(set.reps); if(!Number.isFinite(reps))return s;
+        if(bodyweightLoad&&Number.isFinite(bw)&&bw>0){
+          const adjustment=String(set.weight??'').trim()===''?0:Number(set.weight);
+          if(!Number.isFinite(adjustment))return s;
+          return s+volumeForSet(bw+adjustment,reps,mult);
+        }
+        return s+volumeForSet(set.weight,set.reps,mult);
+      },0);
     },0);
   }
   function uid(prefix='id'){ return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,9)}`; }

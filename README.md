@@ -76,3 +76,10 @@ The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` 
 - Set-by-set progression suggestions use the comparable set from the prior completed workout.
 - A successful set is recognized when reps improve at the same weight, or weight increases while at least the programmed minimum reps are achieved.
 - Hitting the top of the rep range earns the next programmed load increase when an increment is assigned.
+
+## V1.4 bodyweight + alternating-week + protected-repeat update
+- Pull-ups and dips that use bodyweight loading now ask for current body weight on each new applicable workout.
+- Enter `0` for bodyweight, a negative value for assistance (for example `-60`), or a positive value for added weight. Volume uses effective load: body weight + entered adjustment.
+- A ± control is included on bodyweight set rows so negative assistance is practical on iPhone numeric entry.
+- Phase 1 Slot 1 now resolves the final movement as Cable Fly in Phase Weeks 1/3 and Straight-Arm Pulldown in Phase Weeks 2/4. Previous-set progression compares each variant only with itself.
+- Completed workouts are protected read-only records. Re-entering one creates a separate editable session and never overwrites the completed sets.
