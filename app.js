@@ -95,7 +95,7 @@
       ${[['home','Home'],['workouts','Workouts'],['review','Weekly'],['settings','Settings']].map(([v,n])=>`<button data-nav="${v}" class="${active===v?'active':''}">${n}</button>`).join('')}
     </nav>`;
   }
-  function headerHtml(title='Tyler OS',sub='Mobile V1.4.1'){
+  function headerHtml(title='Tyler OS',sub='Mobile V1.4.2'){
     return `<div class="header"><div class="brand"><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><span class="pill gray">${esc(activeProfile().name)}</span></div>`;
   }
   function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); }
@@ -202,7 +202,7 @@
       if(workout.id==='p1-s1' && id==='p1-s1-cable-fly-straight-arm-pulldown'){
         name=[1,3].includes(L.phaseWeek(week))?'Cable Fly':'Straight-Arm Pulldown';
       }
-      return {exerciseId:id,name,volumeMultiplier:ex.volumeMultiplier||1,bodyweightLoad:!!ex.bodyweightLoad,sets:Array.from({length:ex.sets},()=>({weight:'',reps:'',done:false}))};
+      return {exerciseId:id,name,volumeMultiplier:(L.canonical(ex.name)==='bulgarian split squat'?2:(ex.volumeMultiplier||1)),bodyweightLoad:!!ex.bodyweightLoad,sets:Array.from({length:ex.sets},()=>({weight:'',reps:'',done:false}))};
     });
     return {id:L.uid('session'),profileId:state.activeProfileId,date:dateKey,week,phase,slot:workout.slot,workoutId:workout.id,variantKey:workoutVariantKey(workout.id,week),workoutName:workout.name,status:'partial',comments:'',warmupStatus:'pending',coreStatus:P.core[`${phase}-${workout.slot}`]?'pending':'not-scheduled',bodyWeight:'',exercises,startedAt:new Date().toISOString(),completedAt:null};
   }
@@ -247,9 +247,28 @@
   function activeSession(){ return sessionById(state.activeSessionId); }
   function workoutMetaForSession(s){ return workoutById(s.workoutId); }
   function metaForExercise(s,ex){
-    const w=workoutMetaForSession(s); return w?.exercises.find(m=>L.canonical(m.name)===L.canonical(ex.name)||m.id===ex.exerciseId) || {name:ex.name,sets:ex.sets.length,minReps:'',topReps:'',rest:'',notes:'',warmup:'',volumeMultiplier:ex.volumeMultiplier||1,bodyweightLoad:!!ex.bodyweightLoad};
+    const w=workoutMetaForSession(s); return w?.exercises.find(m=>L.canonical(m.name)===L.canonical(ex.name)||m.id===ex.exerciseId) || {name:ex.name,sets:ex.sets.length,minReps:'',topReps:'',rest:'',notes:'',warmup:'',volumeMultiplier:(L.canonical(ex.name)==='bulgarian split squat'?2:(ex.volumeMultiplier||1)),bodyweightLoad:!!ex.bodyweightLoad};
   }
   function sessionVolume(s){ return L.sessionVolume(s,(id)=>{ const w=workoutMetaForSession(s); return w?.exercises.find(x=>x.id===id); }); }
+  function canEditCompletedSession(s){
+    if(!s || s.status!=='completed') return true;
+    const today=L.todayKey();
+    const d=new Date(today+'T12:00:00');
+    d.setDate(d.getDate()-1);
+    const yesterday=L.localDateKey(d);
+    return s.date===today || s.date===yesterday;
+  }
+
+  function isFinalSetOfWorkout(s, exIndex, setIndex){
+    if(!s || !Array.isArray(s.exercises)) return false;
+    for(let ei=s.exercises.length-1; ei>=0; ei--){
+      const ex=s.exercises[ei];
+      if(!ex || !Array.isArray(ex.sets) || !ex.sets.length) continue;
+      return ei===exIndex && setIndex===ex.sets.length-1;
+    }
+    return false;
+  }
+
   function previousExercise(s,exName){
     const targetVariant=s.variantKey||workoutVariantKey(s.workoutId,s.week);
     const candidates=sessionsForProfile().filter(x=>{
@@ -308,7 +327,7 @@
 
   function renderWorkout(){
     const s=activeSession(); if(!s){ go('home'); return; }
-    const w=workoutMetaForSession(s); const readOnly=s.status==='completed';
+    const w=workoutMetaForSession(s); const readOnly=s.status==='completed'&&!canEditCompletedSession(s);
     app.innerHTML=headerHtml(s.workoutName,`${fmtDate(s.date)} • Week ${s.week}`)+`
       <div class="volume-bar"><div class="row between"><div><div class="label" style="color:#9ca3af">Workout Volume</div><div class="big"><span id="volumeTotal">${L.formatVolume(sessionVolume(s))}</span> lb</div></div><div class="small" style="text-align:right">${s.warmupStatus==='completed'?'Warm-up ✓':s.warmupStatus==='skipped'?'Warm-up skipped':'Warm-up pending'}<br>${s.coreStatus==='completed'?'Core ✓':s.coreStatus==='skipped'?'Core skipped':''}</div></div></div>
       ${s.exercises.some(ex=>isBodyweightExercise(metaForExercise(s,ex),ex))?`<div class="card tight bodyweight-card"><div class="row between"><div><div class="label">Current Body Weight</div><div class="value">${esc(s.bodyWeight||'—')} lb</div></div>${!readOnly?`<button id="changeBodyWeight" class="btn sm ghost">Change</button>`:''}</div><p class="small muted">For pull-ups/dips, enter <strong>0</strong> for bodyweight, <strong>-60</strong> for 60 lb assistance, or <strong>+25</strong> for 25 lb added weight.</p></div>`:''}
@@ -489,7 +508,7 @@
       <div class="card"><div class="label">Active Profile</div><select id="profileSelect">${state.profiles.map(x=>`<option value="${esc(x.id)}" ${x.id===state.activeProfileId?'selected':''}>${esc(x.name)}</option>`).join('')}</select><div class="label" style="margin-top:14px">Program Start Date</div><input id="startDate" type="date" value="${esc(p.startDate||'')}"><div class="label" style="margin-top:14px">Current Body Weight (lb)</div><input id="bodyWeight" inputmode="decimal" type="number" step="0.1" value="${esc(p.bodyWeight||'')}" placeholder="Used for pull-ups / dips"><p class="small muted">The calendar controls Week 1–12. Missing a workout does not freeze program progress.</p></div>
       <div class="card"><div class="label">Add Profile</div><div class="grid2"><input id="newProfile" placeholder="Name"><button id="addProfile" class="btn primary">Add</button></div></div>
       <div class="card"><div class="label">Backup / Migration</div><p class="small muted">Data is stored locally on this device. Export a backup before clearing browser data or changing phones.</p><div class="grid2"><button id="exportData" class="btn ghost">Export JSON</button><button id="importData" class="btn ghost">Import JSON</button></div><button id="importWebLog" class="btn ghost full" style="margin-top:10px">Import Web Workout Log CSV</button><input id="importFile" class="hidden" type="file" accept="application/json"><input id="webLogFile" class="hidden" type="file" accept=".csv,text/csv"></div>
-      <div class="card"><div class="label">Mobile V1.4.1</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
+      <div class="card"><div class="label">Mobile V1.4.2</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Rest timer auto-starts after every set except the final set of the workout<br>✓ Bulgarian Split Squat volume counts both legs<br>✓ Today's and yesterday's completed workouts can be edited in place<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
       ${navHtml('settings')}`;
     document.getElementById('profileSelect').onchange=e=>{state.activeProfileId=e.target.value;state.activeSessionId=null;selectedWeek=null;saveState();renderSettings()};
     document.getElementById('startDate').onchange=e=>{p.startDate=e.target.value;selectedWeek=null;saveState();toast('Program calendar updated')};

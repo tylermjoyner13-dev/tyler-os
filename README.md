@@ -89,3 +89,9 @@ The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` 
 - Assisted/weighted bodyweight sets accept signed adjustments such as -60 assistance or +25 added weight.
 - Current body weight is captured/stored and effective load is body weight + adjustment for volume.
 - Phase 1 Slot 1 uses two progression lanes: Weeks 1/3 and Weeks 2/4. Previous-workout comparisons do not cross lanes.
+
+
+## V1.4.2
+- Rest timer automatically starts after every completed set, including the final set of an exercise, except the final set of the entire workout.
+- Bulgarian Split Squat is treated as unilateral for volume and counts both legs.
+- Completed workouts from today and yesterday can be reopened and edited in place; older completed sessions remain protected.
