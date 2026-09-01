@@ -47,6 +47,8 @@
         }
       }
       if(s.bodyWeight===undefined){s.bodyWeight='';changed=true;}
+      const expectedVariant=workoutVariantKey(s.workoutId,s.week);
+      if(s.variantKey!==expectedVariant){s.variantKey=expectedVariant;changed=true;}
     });
     if(changed)localStorage.setItem(STORE_KEY,JSON.stringify(state));
   }
@@ -54,6 +56,12 @@
   function activeProfile(){ return state.profiles.find(p=>p.id===state.activeProfileId)||state.profiles[0]; }
   function workoutBy(phase,slot){ return P.workouts.find(w=>w.phase===phase&&w.slot===slot); }
   function workoutById(id){ return P.workouts.find(w=>w.id===id); }
+  function workoutVariantKey(workoutId,week){
+    if(workoutId==='p1-s1'){
+      return [1,3].includes(L.phaseWeek(Number(week)||1))?'p1-s1-w13':'p1-s1-w24';
+    }
+    return workoutId;
+  }
   function sessionById(id){ return state.sessions.find(s=>s.id===id); }
   function sessionsFor(profileId,dateKey,workoutId){
     return state.sessions.filter(s=>s.profileId===profileId&&s.date===dateKey&&s.workoutId===workoutId&&s.status!=='deleted');
@@ -87,7 +95,7 @@
       ${[['home','Home'],['workouts','Workouts'],['review','Weekly'],['settings','Settings']].map(([v,n])=>`<button data-nav="${v}" class="${active===v?'active':''}">${n}</button>`).join('')}
     </nav>`;
   }
-  function headerHtml(title='Tyler OS',sub='Mobile V1.4'){
+  function headerHtml(title='Tyler OS',sub='Mobile V1.4.1'){
     return `<div class="header"><div class="brand"><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><span class="pill gray">${esc(activeProfile().name)}</span></div>`;
   }
   function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); }
@@ -196,7 +204,7 @@
       }
       return {exerciseId:id,name,volumeMultiplier:ex.volumeMultiplier||1,bodyweightLoad:!!ex.bodyweightLoad,sets:Array.from({length:ex.sets},()=>({weight:'',reps:'',done:false}))};
     });
-    return {id:L.uid('session'),profileId:state.activeProfileId,date:dateKey,week,phase,slot:workout.slot,workoutId:workout.id,workoutName:workout.name,status:'partial',comments:'',warmupStatus:'pending',coreStatus:P.core[`${phase}-${workout.slot}`]?'pending':'not-scheduled',bodyWeight:'',exercises,startedAt:new Date().toISOString(),completedAt:null};
+    return {id:L.uid('session'),profileId:state.activeProfileId,date:dateKey,week,phase,slot:workout.slot,workoutId:workout.id,variantKey:workoutVariantKey(workout.id,week),workoutName:workout.name,status:'partial',comments:'',warmupStatus:'pending',coreStatus:P.core[`${phase}-${workout.slot}`]?'pending':'not-scheduled',bodyWeight:'',exercises,startedAt:new Date().toISOString(),completedAt:null};
   }
 
   function workoutNeedsBodyWeight(w){ return !!w?.exercises?.some(ex=>ex.bodyweightLoad); }
@@ -243,7 +251,12 @@
   }
   function sessionVolume(s){ return L.sessionVolume(s,(id)=>{ const w=workoutMetaForSession(s); return w?.exercises.find(x=>x.id===id); }); }
   function previousExercise(s,exName){
-    const candidates=sessionsForProfile().filter(x=>x.status==='completed'&&x.workoutId===s.workoutId&&x.id!==s.id&&x.date<s.date).sort((a,b)=>(b.completedAt||b.date).localeCompare(a.completedAt||a.date));
+    const targetVariant=s.variantKey||workoutVariantKey(s.workoutId,s.week);
+    const candidates=sessionsForProfile().filter(x=>{
+      if(x.status!=='completed'||x.workoutId!==s.workoutId||x.id===s.id||x.date>=s.date) return false;
+      const oldVariant=x.variantKey||workoutVariantKey(x.workoutId,x.week);
+      return oldVariant===targetVariant;
+    }).sort((a,b)=>(b.completedAt||b.date).localeCompare(a.completedAt||a.date));
     for(const old of candidates){ const ex=old.exercises.find(e=>L.canonical(e.name)===L.canonical(exName)); if(ex) return {date:old.date,ex}; }
     return null;
   }
@@ -342,7 +355,7 @@
     return ex.sets.map((set,idx)=>{
       const result=resultForSet(meta,plans[idx],set); const eff=effectiveLoad(s,ex,meta,set.weight); const reps=numeric(set.reps);
       const effText=bw&&eff!==null&&reps!==null?` • Effective ${fmtWeight(eff)} lb`:'';
-      return `<div class="set-wrap"><div class="set-row ${bw?'bodyweight-set':''}" data-ex="${esc(ex.exerciseId)}" data-set="${idx}"><div class="set-num">${idx+1}</div><div class="weight-cell"><div class="weight-input-wrap"><input ${readOnly?'disabled':''} inputmode="decimal" type="number" step="0.5" class="weight" value="${esc(set.weight)}" placeholder="0">${bw&&!readOnly?`<button type="button" class="sign-toggle" aria-label="toggle assistance sign">±</button>`:''}</div><div class="unit">${bw?'assist − / added +':'lb'}</div></div><div><input ${readOnly?'disabled':''} inputmode="numeric" type="number" step="1" class="reps" value="${esc(set.reps)}" placeholder="0"><div class="unit">reps</div></div><button ${readOnly?'disabled':''} class="check ${set.done?'done':''}" aria-label="set done">${set.done?'✓':'○'}</button></div><div class="set-result ${result.status}" data-result-for="${esc(ex.exerciseId)}-${idx}">${esc(result.label+effText)}</div></div>`;
+      return `<div class="set-wrap"><div class="set-row ${bw?'bodyweight-set':''}" data-ex="${esc(ex.exerciseId)}" data-set="${idx}"><div class="set-num">${idx+1}</div><div class="weight-cell"><div class="weight-input-wrap"><input ${readOnly?'disabled':''} inputmode="decimal" type="number" step="0.5" class="weight" value="${esc(set.weight)}" placeholder="${bw?'0 / -60 / +25':'0'}">${bw&&!readOnly?`<button type="button" class="sign-toggle" aria-label="toggle assistance or added weight sign">+/−</button>`:''}</div><div class="unit">${bw?'negative = assisted • positive = weighted':'lb'}</div></div><div><input ${readOnly?'disabled':''} inputmode="numeric" type="number" step="1" class="reps" value="${esc(set.reps)}" placeholder="0"><div class="unit">reps</div></div><button ${readOnly?'disabled':''} class="check ${set.done?'done':''}" aria-label="set done">${set.done?'✓':'○'}</button></div><div class="set-result ${result.status}" data-result-for="${esc(ex.exerciseId)}-${idx}">${esc(result.label+effText)}</div></div>`;
     }).join('');
   }
   function renderSingleExercise(s,ex,meta,readOnly){
@@ -476,7 +489,7 @@
       <div class="card"><div class="label">Active Profile</div><select id="profileSelect">${state.profiles.map(x=>`<option value="${esc(x.id)}" ${x.id===state.activeProfileId?'selected':''}>${esc(x.name)}</option>`).join('')}</select><div class="label" style="margin-top:14px">Program Start Date</div><input id="startDate" type="date" value="${esc(p.startDate||'')}"><div class="label" style="margin-top:14px">Current Body Weight (lb)</div><input id="bodyWeight" inputmode="decimal" type="number" step="0.1" value="${esc(p.bodyWeight||'')}" placeholder="Used for pull-ups / dips"><p class="small muted">The calendar controls Week 1–12. Missing a workout does not freeze program progress.</p></div>
       <div class="card"><div class="label">Add Profile</div><div class="grid2"><input id="newProfile" placeholder="Name"><button id="addProfile" class="btn primary">Add</button></div></div>
       <div class="card"><div class="label">Backup / Migration</div><p class="small muted">Data is stored locally on this device. Export a backup before clearing browser data or changing phones.</p><div class="grid2"><button id="exportData" class="btn ghost">Export JSON</button><button id="importData" class="btn ghost">Import JSON</button></div><button id="importWebLog" class="btn ghost full" style="margin-top:10px">Import Web Workout Log CSV</button><input id="importFile" class="hidden" type="file" accept="application/json"><input id="webLogFile" class="hidden" type="file" accept=".csv,text/csv"></div>
-      <div class="card"><div class="label">Mobile V1.4</div><p class="small">✓ Assisted/weighted bodyweight tracking with effective load<br>✓ Phase 1 Slot 1 W1/W3 and W2/W4 variants tracked separately<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
+      <div class="card"><div class="label">Mobile V1.4.1</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
       ${navHtml('settings')}`;
     document.getElementById('profileSelect').onchange=e=>{state.activeProfileId=e.target.value;state.activeSessionId=null;selectedWeek=null;saveState();renderSettings()};
     document.getElementById('startDate').onchange=e=>{p.startDate=e.target.value;selectedWeek=null;saveState();toast('Program calendar updated')};
