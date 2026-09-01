@@ -101,3 +101,9 @@ The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` 
 - Added Delete Workout for partial/in-progress sessions.
 - Delete requires confirmation and permanently removes that session's sets and notes.
 - Completed workouts remain protected from the simple delete action.
+
+
+## V1.4.4
+- Fixed Delete Workout: the V1.4.3 button was displayed but its click handler was not attached.
+- Partial/in-progress workouts can now be permanently deleted after confirmation.
+- Completed workouts remain protected.

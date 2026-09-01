@@ -95,7 +95,7 @@
       ${[['home','Home'],['workouts','Workouts'],['review','Weekly'],['settings','Settings']].map(([v,n])=>`<button data-nav="${v}" class="${active===v?'active':''}">${n}</button>`).join('')}
     </nav>`;
   }
-  function headerHtml(title='Tyler OS',sub='Mobile V1.4.3'){
+  function headerHtml(title='Tyler OS',sub='Mobile V1.4.4'){
     return `<div class="header"><div class="brand"><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><span class="pill gray">${esc(activeProfile().name)}</span></div>`;
   }
   function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); }
@@ -359,6 +359,7 @@
     document.getElementById('warmBtn').onclick=()=>openWarmup(s,true);
     document.getElementById('changeBodyWeight')?.addEventListener('click',()=>{s.bodyWeight='';if(captureBodyWeightForSession(s,w)){saveState();renderWorkout();}});
     document.getElementById('comments').oninput=e=>{s.comments=e.target.value;saveState()};
+    document.querySelector('.delete-workout-btn')?.addEventListener('click',()=>deletePartialSession(s.id));
     if(!readOnly){
       bindSetInputs(s);
       document.getElementById('finishWorkout').onclick=()=>attemptFinish(s);
@@ -524,7 +525,7 @@
       <div class="card"><div class="label">Active Profile</div><select id="profileSelect">${state.profiles.map(x=>`<option value="${esc(x.id)}" ${x.id===state.activeProfileId?'selected':''}>${esc(x.name)}</option>`).join('')}</select><div class="label" style="margin-top:14px">Program Start Date</div><input id="startDate" type="date" value="${esc(p.startDate||'')}"><div class="label" style="margin-top:14px">Current Body Weight (lb)</div><input id="bodyWeight" inputmode="decimal" type="number" step="0.1" value="${esc(p.bodyWeight||'')}" placeholder="Used for pull-ups / dips"><p class="small muted">The calendar controls Week 1–12. Missing a workout does not freeze program progress.</p></div>
       <div class="card"><div class="label">Add Profile</div><div class="grid2"><input id="newProfile" placeholder="Name"><button id="addProfile" class="btn primary">Add</button></div></div>
       <div class="card"><div class="label">Backup / Migration</div><p class="small muted">Data is stored locally on this device. Export a backup before clearing browser data or changing phones.</p><div class="grid2"><button id="exportData" class="btn ghost">Export JSON</button><button id="importData" class="btn ghost">Import JSON</button></div><button id="importWebLog" class="btn ghost full" style="margin-top:10px">Import Web Workout Log CSV</button><input id="importFile" class="hidden" type="file" accept="application/json"><input id="webLogFile" class="hidden" type="file" accept=".csv,text/csv"></div>
-      <div class="card"><div class="label">Mobile V1.4.3</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Rest timer auto-starts after every set except the final set of the workout<br>✓ Bulgarian Split Squat volume counts both legs<br>✓ Today's and yesterday's completed workouts can be edited in place<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
+      <div class="card"><div class="label">Mobile V1.4.4</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Rest timer auto-starts after every set except the final set of the workout<br>✓ Bulgarian Split Squat volume counts both legs<br>✓ Today's and yesterday's completed workouts can be edited in place<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
       ${navHtml('settings')}`;
     document.getElementById('profileSelect').onchange=e=>{state.activeProfileId=e.target.value;state.activeSessionId=null;selectedWeek=null;saveState();renderSettings()};
     document.getElementById('startDate').onchange=e=>{p.startDate=e.target.value;selectedWeek=null;saveState();toast('Program calendar updated')};
