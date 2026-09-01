@@ -95,7 +95,7 @@
       ${[['home','Home'],['workouts','Workouts'],['review','Weekly'],['settings','Settings']].map(([v,n])=>`<button data-nav="${v}" class="${active===v?'active':''}">${n}</button>`).join('')}
     </nav>`;
   }
-  function headerHtml(title='Tyler OS',sub='Mobile V1.4.2'){
+  function headerHtml(title='Tyler OS',sub='Mobile V1.4.3'){
     return `<div class="header"><div class="brand"><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><span class="pill gray">${esc(activeProfile().name)}</span></div>`;
   }
   function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); }
@@ -250,6 +250,22 @@
     const w=workoutMetaForSession(s); return w?.exercises.find(m=>L.canonical(m.name)===L.canonical(ex.name)||m.id===ex.exerciseId) || {name:ex.name,sets:ex.sets.length,minReps:'',topReps:'',rest:'',notes:'',warmup:'',volumeMultiplier:(L.canonical(ex.name)==='bulgarian split squat'?2:(ex.volumeMultiplier||1)),bodyweightLoad:!!ex.bodyweightLoad};
   }
   function sessionVolume(s){ return L.sessionVolume(s,(id)=>{ const w=workoutMetaForSession(s); return w?.exercises.find(x=>x.id===id); }); }
+  function deletePartialSession(sessionId){
+    const s=state.db.sessions.find(x=>x.id===sessionId);
+    if(!s) return;
+    if(s.status==='completed'){
+      alert('Completed workouts are protected and cannot be deleted here.');
+      return;
+    }
+    const ok=confirm('Delete this workout? This will permanently remove all sets and notes from this session.');
+    if(!ok) return;
+    state.db.sessions=state.db.sessions.filter(x=>x.id!==sessionId);
+    if(state.activeSessionId===sessionId) state.activeSessionId=null;
+    save();
+    state.route='workouts';
+    render();
+  }
+
   function canEditCompletedSession(s){
     if(!s || s.status!=='completed') return true;
     const today=L.todayKey();
@@ -336,7 +352,7 @@
       <div id="exerciseList">${renderExerciseBlocks(s,w,readOnly)}</div>
       <div class="card"><div class="label">Workout Comments</div><textarea id="comments" ${readOnly?'disabled':''} placeholder="How did the week/workout feel?">${esc(s.comments||'')}</textarea></div>
       ${!readOnly?`<button id="finishWorkout" class="btn good full">Finish Workout</button>`:`<button id="repeatWorkout" class="btn primary full">Re-enter as New Session</button>`}
-      <div id="restTimer" class="timer hidden"></div>
+      <div id="restTimer" class="timer hidden"></div>${s.status!=='completed'?`<div class="danger-zone"><button type="button" class="delete-workout-btn">Delete Workout</button></div>`:''}
       ${navHtml('')}`;
     bindNav();
     document.getElementById('backHome').onclick=()=>{syncSessionFromInputs();saveState();go('home')};
@@ -508,7 +524,7 @@
       <div class="card"><div class="label">Active Profile</div><select id="profileSelect">${state.profiles.map(x=>`<option value="${esc(x.id)}" ${x.id===state.activeProfileId?'selected':''}>${esc(x.name)}</option>`).join('')}</select><div class="label" style="margin-top:14px">Program Start Date</div><input id="startDate" type="date" value="${esc(p.startDate||'')}"><div class="label" style="margin-top:14px">Current Body Weight (lb)</div><input id="bodyWeight" inputmode="decimal" type="number" step="0.1" value="${esc(p.bodyWeight||'')}" placeholder="Used for pull-ups / dips"><p class="small muted">The calendar controls Week 1–12. Missing a workout does not freeze program progress.</p></div>
       <div class="card"><div class="label">Add Profile</div><div class="grid2"><input id="newProfile" placeholder="Name"><button id="addProfile" class="btn primary">Add</button></div></div>
       <div class="card"><div class="label">Backup / Migration</div><p class="small muted">Data is stored locally on this device. Export a backup before clearing browser data or changing phones.</p><div class="grid2"><button id="exportData" class="btn ghost">Export JSON</button><button id="importData" class="btn ghost">Import JSON</button></div><button id="importWebLog" class="btn ghost full" style="margin-top:10px">Import Web Workout Log CSV</button><input id="importFile" class="hidden" type="file" accept="application/json"><input id="webLogFile" class="hidden" type="file" accept=".csv,text/csv"></div>
-      <div class="card"><div class="label">Mobile V1.4.2</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Rest timer auto-starts after every set except the final set of the workout<br>✓ Bulgarian Split Squat volume counts both legs<br>✓ Today's and yesterday's completed workouts can be edited in place<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
+      <div class="card"><div class="label">Mobile V1.4.3</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Rest timer auto-starts after every set except the final set of the workout<br>✓ Bulgarian Split Squat volume counts both legs<br>✓ Today's and yesterday's completed workouts can be edited in place<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
       ${navHtml('settings')}`;
     document.getElementById('profileSelect').onchange=e=>{state.activeProfileId=e.target.value;state.activeSessionId=null;selectedWeek=null;saveState();renderSettings()};
     document.getElementById('startDate').onchange=e=>{p.startDate=e.target.value;selectedWeek=null;saveState();toast('Program calendar updated')};

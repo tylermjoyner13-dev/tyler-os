@@ -95,3 +95,9 @@ The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` 
 - Rest timer automatically starts after every completed set, including the final set of an exercise, except the final set of the entire workout.
 - Bulgarian Split Squat is treated as unilateral for volume and counts both legs.
 - Completed workouts from today and yesterday can be reopened and edited in place; older completed sessions remain protected.
+
+
+## V1.4.3
+- Added Delete Workout for partial/in-progress sessions.
+- Delete requires confirmation and permanently removes that session's sets and notes.
+- Completed workouts remain protected from the simple delete action.
