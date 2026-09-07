@@ -132,3 +132,10 @@ Restores the major guided-training features from the V6.3.5 web app while retain
 - Restores automatic/manual Guided Warm-Up
 - Allows signed assisted/weighted bodyweight entry on iPhone and across phases
 - Keeps P1 Slot 1 Week 1/3 and Week 2/4 variants tied to the selected program week, independent of actual training date
+
+
+## Mobile V1.5.2 — Version Verification Build
+
+- Corrects all visible app version labels to Mobile V1.5.2.
+- Bumps the service-worker cache to force deployment refresh.
+- No workout data reset or intentional training-logic changes from V1.5.1.
