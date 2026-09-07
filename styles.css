@@ -63,3 +63,18 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}.hidden{display:none!
 .danger-zone{margin:28px 0 90px;padding-top:18px;border-top:1px solid rgba(127,127,127,.25);text-align:center}
 .delete-workout-btn{background:transparent;border:1px solid #b42318;color:#b42318;border-radius:10px;padding:11px 16px;font-weight:700;font-size:.92rem}
 .delete-workout-btn:active{transform:scale(.98)}
+
+/* V1.5 web-parity training UI */
+.step-card{background:#fff;border-radius:16px;padding:12px 14px;margin:10px 0;border:1px solid var(--line)}
+.progress{height:8px;border-radius:999px;background:#e5e7eb;overflow:hidden;margin-top:9px}.progress>div{height:100%;background:var(--blue);border-radius:999px}
+.clock{font-size:22px;font-weight:900}
+.step-nav{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 18px}
+.ramp-note{margin:8px 0;padding:9px 10px;border-radius:12px;background:#fefce8;border-left:4px solid #eab308;font-size:13px}
+.pr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.pr-box{padding:10px;border:1px solid var(--line);border-radius:13px;background:#fafafa}.pr-box strong{font-size:16px}
+.history{margin:8px 0 10px}.history summary{font-size:12px;font-weight:900;color:var(--blue);cursor:pointer}.history-row{display:flex;flex-direction:column;gap:2px;padding:7px 0;border-bottom:1px solid var(--line);font-size:11px}.history-row span{color:var(--muted)}
+.goal-box{margin:10px 0;padding:10px;border-radius:14px;background:#f9fafb;border:1px solid var(--line)}.goal-squares{font-size:18px}.goal-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:4px 0}.goal-row span{text-align:right;font-weight:700}
+.exercise-notes{margin-top:12px}.exercise-notes textarea{min-height:64px;font-size:14px}
+.superset-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.super-col{min-width:0;padding:8px;border-radius:14px;background:#fff;border:1px solid #dbeafe}.super-col .set-row{grid-template-columns:28px 1fr 1fr 44px;gap:4px}.super-col input[type=number]{font-size:16px;padding:8px 4px;min-height:42px}.super-col .check{height:42px}.super-col .set-result{padding-left:32px;font-size:10px}.super-col h3{font-size:16px}.super-col .meta{font-size:10px}.super-col .coach-set,.super-col .goal-row{font-size:10px}.super-col .pr-box{padding:7px}.super-col .pr-box strong{font-size:12px}
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.summary-grid strong{font-size:20px}
+.reps-cue{font-size:42px}
+@media(max-width:430px){.superset-grid{grid-template-columns:1fr 1fr;gap:6px}.super-col{padding:6px}.super-col .set-row{grid-template-columns:22px minmax(0,1fr) minmax(0,1fr) 36px;gap:3px}.super-col .unit{font-size:8px}.super-col .sign-toggle{width:28px;height:32px;font-size:14px}.super-col .bodyweight-set .weight{padding-right:30px}.super-col .coach-box,.super-col .goal-box{padding:7px}.super-col .pr-grid{gap:4px}}

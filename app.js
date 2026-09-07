@@ -26,6 +26,7 @@
   let restTimer = null;
   const autoRestTriggered = new Set();
   let guideTimer = null;
+  let workoutClockInterval = null;
 
   function loadState(){
     try {
@@ -47,6 +48,8 @@
         }
       }
       if(s.bodyWeight===undefined){s.bodyWeight='';changed=true;}
+      if(s.currentStep===undefined){s.currentStep=0;changed=true;}
+      (s.exercises||[]).forEach(ex=>{if(ex.notes===undefined){ex.notes='';changed=true;}});
       const expectedVariant=workoutVariantKey(s.workoutId,s.week);
       if(s.variantKey!==expectedVariant){s.variantKey=expectedVariant;changed=true;}
     });
@@ -95,7 +98,7 @@
       ${[['home','Home'],['workouts','Workouts'],['review','Weekly'],['settings','Settings']].map(([v,n])=>`<button data-nav="${v}" class="${active===v?'active':''}">${n}</button>`).join('')}
     </nav>`;
   }
-  function headerHtml(title='Tyler OS',sub='Mobile V1.4.4'){
+  function headerHtml(title='Tyler OS',sub='Mobile V1.5'){
     return `<div class="header"><div class="brand"><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><span class="pill gray">${esc(activeProfile().name)}</span></div>`;
   }
   function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); }
@@ -119,6 +122,7 @@
     if(view==='workouts') return renderWorkouts();
     if(view==='review') return renderReview();
     if(view==='settings') return renderSettings();
+    if(view==='complete') return renderCompletion();
     renderHome();
   }
 
@@ -178,7 +182,7 @@
     const week=selectedWeek||info.week; selectedWeek=week;
     const phase=L.phaseForWeek(week);
     app.innerHTML=headerHtml('Workouts',`Choose any workout • Week ${week}`)+`
-      <div class="card tight"><div class="row between"><button id="prevW" class="btn sm ghost" ${week<=1?'disabled':''}>←</button><div style="text-align:center"><div class="label">Program Week</div><div class="value">${week} of 12</div></div><button id="nextW" class="btn sm ghost" ${week>=12?'disabled':''}>→</button></div></div>
+      <div class="card tight"><div class="row between"><button id="prevW" class="btn sm ghost" ${week<=1?'disabled':''}>←</button><div style="text-align:center"><div class="label">Program Week</div><div class="value">${week} of 12</div></div><button id="nextW" class="btn sm ghost" ${week>=12?'disabled':''}>→</button></div><div class="label" style="margin-top:12px">Start selected workout on date</div><input id="chosenWorkoutDate" type="date" value="${L.localDateKey(today())}"><div class="small muted">Leave this as today, or choose another actual training date.</div></div>
       ${[1,2,3,4,5].map(slot=>{
         const w=workoutBy(phase,slot); const d=L.scheduledDateForWeekSlot(p.startDate,week,slot); const dk=L.localDateKey(d); const s=actionSessionForWeekWorkout(p.id,week,w.id); const shownDate=s?.date||dk;
         return `<div class="workout-card ${L.localDateKey(today())===shownDate?'today':''}"><div class="row between"><div><div class="label">Slot ${slot} • ${esc(w.day)}</div><div class="value">${esc(w.name)}</div><div class="small muted">${fmtDate(shownDate)}${s&&s.date!==dk?' • actually trained':''} • ${w.exercises.length} exercises</div></div>${s?`<span class="pill ${s.status==='completed'?'green':s.status==='partial'?'amber':'red'}">${esc(s.status==='partial'&&s.repeatOfSessionId?'repeat in progress':s.status)}</span>`:''}</div><button class="btn primary full startChosen" data-id="${w.id}" data-date="${s?.date||dk}" data-week="${week}" style="margin-top:10px">${s?.status==='partial'?'Resume':s?.status==='completed'?'View / Repeat':'Start'}</button></div>`;
@@ -186,7 +190,12 @@
       ${navHtml('workouts')}`;
     document.getElementById('prevW').onclick=()=>{selectedWeek=Math.max(1,week-1);renderWorkouts()};
     document.getElementById('nextW').onclick=()=>{selectedWeek=Math.min(12,week+1);renderWorkouts()};
-    document.querySelectorAll('.startChosen').forEach(b=>b.onclick=()=>startWorkout(b.dataset.id,b.dataset.date,Number(b.dataset.week)));
+    document.querySelectorAll('.startChosen').forEach(b=>b.onclick=()=>{
+      const chosen=document.getElementById('chosenWorkoutDate')?.value;
+      const date=chosen||b.dataset.date;
+      const actualWeek=L.programWeek(p.startDate,L.parseLocalDate(date));
+      startWorkout(b.dataset.id,date,actualWeek);
+    });
     bindNav();
   }
 
@@ -202,9 +211,9 @@
       if(workout.id==='p1-s1' && id==='p1-s1-cable-fly-straight-arm-pulldown'){
         name=[1,3].includes(L.phaseWeek(week))?'Cable Fly':'Straight-Arm Pulldown';
       }
-      return {exerciseId:id,name,volumeMultiplier:(L.canonical(ex.name)==='bulgarian split squat'?2:(ex.volumeMultiplier||1)),bodyweightLoad:!!ex.bodyweightLoad,sets:Array.from({length:ex.sets},()=>({weight:'',reps:'',done:false}))};
+      return {exerciseId:id,name,notes:'',volumeMultiplier:(L.canonical(ex.name)==='bulgarian split squat'?2:(ex.volumeMultiplier||1)),bodyweightLoad:!!ex.bodyweightLoad,sets:Array.from({length:ex.sets},()=>({weight:'',reps:'',done:false}))};
     });
-    return {id:L.uid('session'),profileId:state.activeProfileId,date:dateKey,week,phase,slot:workout.slot,workoutId:workout.id,variantKey:workoutVariantKey(workout.id,week),workoutName:workout.name,status:'partial',comments:'',warmupStatus:'pending',coreStatus:P.core[`${phase}-${workout.slot}`]?'pending':'not-scheduled',bodyWeight:'',exercises,startedAt:new Date().toISOString(),completedAt:null};
+    return {id:L.uid('session'),profileId:state.activeProfileId,date:dateKey,week,phase,slot:workout.slot,workoutId:workout.id,variantKey:workoutVariantKey(workout.id,week),workoutName:workout.name,status:'partial',comments:'',warmupStatus:'pending',coreStatus:P.core[`${phase}-${workout.slot}`]?'pending':'not-scheduled',bodyWeight:'',currentStep:0,exercises,startedAt:new Date().toISOString(),completedAt:null};
   }
 
   function workoutNeedsBodyWeight(w){ return !!w?.exercises?.some(ex=>ex.bodyweightLoad); }
@@ -251,19 +260,21 @@
   }
   function sessionVolume(s){ return L.sessionVolume(s,(id)=>{ const w=workoutMetaForSession(s); return w?.exercises.find(x=>x.id===id); }); }
   function deletePartialSession(sessionId){
-    const s=state.db.sessions.find(x=>x.id===sessionId);
+    const s=state.sessions.find(x=>x.id===sessionId);
     if(!s) return;
     if(s.status==='completed'){
       alert('Completed workouts are protected and cannot be deleted here.');
       return;
     }
-    const ok=confirm('Delete this workout? This will permanently remove all sets and notes from this session.');
-    if(!ok) return;
-    state.db.sessions=state.db.sessions.filter(x=>x.id!==sessionId);
+    if(!confirm('Delete this workout? This permanently removes this in-progress session, its sets, and notes.')) return;
+    state.sessions=state.sessions.filter(x=>x.id!==sessionId);
     if(state.activeSessionId===sessionId) state.activeSessionId=null;
-    save();
-    state.route='workouts';
+    saveState();
+    view='workouts';
+    state.settings.lastView=view;
+    saveState();
     render();
+    toast('Workout deleted');
   }
 
   function canEditCompletedSession(s){
@@ -341,25 +352,101 @@
     return `<div class="coach-box"><div class="coach-title">Suggested progression</div>${plans.map(p=>`<div class="coach-set"><strong>S${p.set}</strong><span>${esc(p.label)}</span></div>`).join('')}</div>`;
   }
 
+  function workoutGroups(s){
+    const groups=[]; let i=0;
+    while(i<s.exercises.length){
+      const ex=s.exercises[i], meta=metaForExercise(s,ex);
+      if(meta.group && i+1<s.exercises.length){
+        const ex2=s.exercises[i+1], meta2=metaForExercise(s,ex2);
+        if(meta2.group===meta.group){groups.push({type:'superset',items:[[ex,meta],[ex2,meta2]]});i+=2;continue;}
+      }
+      groups.push({type:'standard',items:[[ex,meta]]}); i++;
+    }
+    return groups;
+  }
+  function historicalExerciseSessions(s,exName,limit=3){
+    const targetVariant=s.variantKey||workoutVariantKey(s.workoutId,s.week);
+    const rows=[];
+    sessionsForProfile().filter(x=>x.status==='completed'&&x.id!==s.id&&x.date<=s.date).forEach(old=>{
+      if(old.workoutId===s.workoutId){
+        const ov=old.variantKey||workoutVariantKey(old.workoutId,old.week);
+        if(ov!==targetVariant)return;
+      }
+      const ex=(old.exercises||[]).find(e=>L.canonical(e.name)===L.canonical(exName));
+      if(ex)rows.push({date:old.date,ex});
+    });
+    return rows.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,limit);
+  }
+  function exercisePRs(s,exName){
+    let maxWeight=null,maxReps=null;
+    sessionsForProfile().filter(x=>x.status==='completed'&&x.id!==s.id&&x.date<=s.date).forEach(old=>{
+      const ex=(old.exercises||[]).find(e=>L.canonical(e.name)===L.canonical(exName)); if(!ex)return;
+      (ex.sets||[]).forEach(set=>{
+        const w=numeric(set.weight),r=numeric(set.reps);
+        if(w!==null&&(maxWeight===null||w>maxWeight))maxWeight=w;
+        if(r!==null&&(maxReps===null||r>maxReps))maxReps=r;
+      });
+    });
+    return {maxWeight,maxReps};
+  }
+  function prHtml(s,ex){
+    const pr=exercisePRs(s,ex.name);
+    return `<div class="pr-grid"><div class="pr-box"><div class="label">Weight PR</div><strong>${pr.maxWeight===null?'—':fmtWeight(pr.maxWeight)+' lb'}</strong></div><div class="pr-box"><div class="label">Rep PR</div><strong>${pr.maxReps===null?'—':pr.maxReps+' reps'}</strong></div></div>`;
+  }
+  function recentHistoryHtml(s,ex){
+    const h=historicalExerciseSessions(s,ex.name,3);
+    if(!h.length)return `<div class="small muted">No prior sessions yet.</div>`;
+    return `<details class="history"><summary>Recent history</summary>${h.map(x=>`<div class="history-row"><strong>${fmtDate(x.date)}</strong><span>${x.ex.sets.map((z,i)=>`S${i+1} ${z.weight||'—'}×${z.reps||'—'}`).join(' • ')}</span></div>`).join('')}</details>`;
+  }
+  function goalTrackerHtml(s,ex,meta,prev){
+    const plans=progressionPlan(meta,prev);
+    const squares=ex.sets.map((set,i)=>{
+      const r=resultForSet(meta,plans[i],set);
+      return r.status==='success'||r.status==='baseline'?'🟩':r.status==='blank'?'⬜':'🟨';
+    }).join(' ');
+    return `<div class="goal-box"><div class="row between"><div class="coach-title">Today's Goal</div><div class="goal-squares">${squares}</div></div>${plans.map(p=>`<div class="goal-row"><strong>S${p.set}</strong><span>${esc(p.label)}</span></div>`).join('')}</div>`;
+  }
+  function workoutElapsedSeconds(s){
+    const start=new Date(s.startedAt||Date.now()).getTime();
+    const end=s.status==='completed'&&s.completedAt?new Date(s.completedAt).getTime():Date.now();
+    return Math.max(0,Math.floor((end-start)/1000));
+  }
+  function formatElapsed(sec){return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`;}
+  function drawWorkoutClock(s){
+    const el=document.getElementById('workoutClock'); if(el)el.textContent=formatElapsed(workoutElapsedSeconds(s));
+  }
+  function startWorkoutClock(s){
+    if(workoutClockInterval)clearInterval(workoutClockInterval);
+    drawWorkoutClock(s);
+    if(s.status!=='completed')workoutClockInterval=setInterval(()=>drawWorkoutClock(s),1000);
+  }
   function renderWorkout(){
     const s=activeSession(); if(!s){ go('home'); return; }
     const w=workoutMetaForSession(s); const readOnly=s.status==='completed'&&!canEditCompletedSession(s);
+    const groups=workoutGroups(s); s.currentStep=Math.max(0,Math.min(Number(s.currentStep)||0,groups.length-1));
+    const step=groups[s.currentStep];
+    const stepLabel=step.type==='superset'?'Superset':'Exercise';
+    const progress=Math.round(((s.currentStep+1)/Math.max(1,groups.length))*100);
     app.innerHTML=headerHtml(s.workoutName,`${fmtDate(s.date)} • Week ${s.week}`)+`
-      <div class="volume-bar"><div class="row between"><div><div class="label" style="color:#9ca3af">Workout Volume</div><div class="big"><span id="volumeTotal">${L.formatVolume(sessionVolume(s))}</span> lb</div></div><div class="small" style="text-align:right">${s.warmupStatus==='completed'?'Warm-up ✓':s.warmupStatus==='skipped'?'Warm-up skipped':'Warm-up pending'}<br>${s.coreStatus==='completed'?'Core ✓':s.coreStatus==='skipped'?'Core skipped':''}</div></div></div>
-      ${s.exercises.some(ex=>isBodyweightExercise(metaForExercise(s,ex),ex))?`<div class="card tight bodyweight-card"><div class="row between"><div><div class="label">Current Body Weight</div><div class="value">${esc(s.bodyWeight||'—')} lb</div></div>${!readOnly?`<button id="changeBodyWeight" class="btn sm ghost">Change</button>`:''}</div><p class="small muted">For pull-ups/dips, enter <strong>0</strong> for bodyweight, <strong>-60</strong> for 60 lb assistance, or <strong>+25</strong> for 25 lb added weight.</p></div>`:''}
+      <div class="volume-bar"><div class="row between"><div><div class="label" style="color:#9ca3af">Workout Volume</div><div class="big"><span id="volumeTotal">${L.formatVolume(sessionVolume(s))}</span> lb</div></div><div style="text-align:right"><div class="label" style="color:#9ca3af">Workout Time</div><div class="clock" id="workoutClock">${formatElapsed(workoutElapsedSeconds(s))}</div></div></div></div>
+      <div class="step-card"><div class="row between"><strong>${stepLabel} ${s.currentStep+1} of ${groups.length}</strong><span class="small muted">${progress}%</span></div><div class="progress"><div style="width:${progress}%"></div></div></div>
+      ${s.exercises.some(ex=>isBodyweightExercise(metaForExercise(s,ex),ex))?`<div class="card tight bodyweight-card"><div class="row between"><div><div class="label">Current Body Weight</div><div class="value">${esc(s.bodyWeight||'—')} lb</div></div>${!readOnly?`<button id="changeBodyWeight" class="btn sm ghost">Change</button>`:''}</div><p class="small muted">Enter <strong>0</strong> for bodyweight, <strong>-60</strong> for 60 lb assistance, or <strong>+25</strong> for 25 lb added weight.</p></div>`:''}
       ${readOnly?`<div class="card tight"><span class="pill green">Completed workout — protected</span><p class="small muted" style="margin-bottom:0">Starting it again creates a separate session. These completed sets will not be changed.</p></div>`:''}
-      <div class="card tight"><div class="row wrap"><button id="warmBtn" class="btn sm ghost">Warm-Up</button><button id="backHome" class="btn sm ghost">Save & Exit</button></div></div>
-      <div id="exerciseList">${renderExerciseBlocks(s,w,readOnly)}</div>
-      <div class="card"><div class="label">Workout Comments</div><textarea id="comments" ${readOnly?'disabled':''} placeholder="How did the week/workout feel?">${esc(s.comments||'')}</textarea></div>
+      <div class="card tight"><div class="row wrap"><button id="warmBtn" class="btn sm ghost">Guided Warm-Up</button><button id="backHome" class="btn sm ghost">Save & Exit</button></div></div>
+      <div id="exerciseList">${step.type==='superset'?renderSuperset(s,step.items,readOnly):renderSingleExercise(s,step.items[0][0],step.items[0][1],readOnly)}</div>
+      <div class="step-nav"><button id="prevStep" class="btn ghost" ${s.currentStep===0?'disabled':''}>← Previous</button><button id="nextStep" class="btn primary">${s.currentStep===groups.length-1?'Review / Finish':'Next →'}</button></div>
+      <div class="card"><div class="label">Workout Comments</div><textarea id="comments" ${readOnly?'disabled':''} placeholder="How did the workout feel?">${esc(s.comments||'')}</textarea></div>
       ${!readOnly?`<button id="finishWorkout" class="btn good full">Finish Workout</button>`:`<button id="repeatWorkout" class="btn primary full">Re-enter as New Session</button>`}
       <div id="restTimer" class="timer hidden"></div>${s.status!=='completed'?`<div class="danger-zone"><button type="button" class="delete-workout-btn">Delete Workout</button></div>`:''}
       ${navHtml('')}`;
-    bindNav();
+    bindNav(); startWorkoutClock(s);
     document.getElementById('backHome').onclick=()=>{syncSessionFromInputs();saveState();go('home')};
     document.getElementById('warmBtn').onclick=()=>openWarmup(s,true);
     document.getElementById('changeBodyWeight')?.addEventListener('click',()=>{s.bodyWeight='';if(captureBodyWeightForSession(s,w)){saveState();renderWorkout();}});
     document.getElementById('comments').oninput=e=>{s.comments=e.target.value;saveState()};
     document.querySelector('.delete-workout-btn')?.addEventListener('click',()=>deletePartialSession(s.id));
+    document.getElementById('prevStep').onclick=()=>{syncSessionFromInputs();s.currentStep=Math.max(0,s.currentStep-1);saveState();renderWorkout();window.scrollTo({top:0,behavior:'smooth'});};
+    document.getElementById('nextStep').onclick=()=>{syncSessionFromInputs();if(s.currentStep<groups.length-1){s.currentStep++;saveState();renderWorkout();window.scrollTo({top:0,behavior:'smooth'});}else attemptFinish(s);};
     if(!readOnly){
       bindSetInputs(s);
       document.getElementById('finishWorkout').onclick=()=>attemptFinish(s);
@@ -367,15 +454,7 @@
   }
 
   function renderExerciseBlocks(s,w,readOnly){
-    const groups=[]; let i=0;
-    while(i<s.exercises.length){
-      const ex=s.exercises[i], meta=metaForExercise(s,ex);
-      if(meta.group && i+1<s.exercises.length){
-        const ex2=s.exercises[i+1], m2=metaForExercise(s,ex2);
-        if(m2.group===meta.group){ groups.push({type:'superset',items:[[ex,meta],[ex2,m2]]}); i+=2; continue; }
-      }
-      groups.push({type:'single',items:[[ex,meta]]}); i++;
-    }
+    const groups=workoutGroups(s);
     return groups.map(g=>g.type==='superset'?renderSuperset(s,g.items,readOnly):renderSingleExercise(s,g.items[0][0],g.items[0][1],readOnly)).join('');
   }
 
@@ -384,23 +463,24 @@
     return `<div class="small muted">Previous ${fmtDate(prev.date)}: ${prev.ex.sets.map((x,i)=>`S${i+1} ${x.weight||'—'}×${x.reps||'—'}`).join(' • ')}</div>`;
   }
   function exHeader(meta,ex){
-    return `<h3>${esc(ex.name)} ${Number(ex.volumeMultiplier||meta.volumeMultiplier||1)!==1?`<span class="pill">Volume ×${ex.volumeMultiplier||meta.volumeMultiplier}</span>`:''} ${isBodyweightExercise(meta,ex)?`<span class="pill amber">BW ± load</span>`:''}</h3><div class="meta">${meta.sets} sets • ${meta.minReps}–${meta.topReps} reps • Rest ${esc(meta.rest||'—')}</div>${meta.notes?`<div class="coach-note"><strong>Coach:</strong> ${esc(meta.notes)}</div>`:''}`;
+    return `<h3>${esc(ex.name)} ${Number(ex.volumeMultiplier||meta.volumeMultiplier||1)!==1?`<span class="pill">Volume ×${ex.volumeMultiplier||meta.volumeMultiplier}</span>`:''} ${isBodyweightExercise(meta,ex)?`<span class="pill amber">BW ± load</span>`:''}</h3><div class="meta">${meta.sets} sets • ${meta.minReps}–${meta.topReps} reps • Rest ${esc(meta.rest||'—')}</div>${meta.warmup?`<div class="ramp-note"><strong>Ramp / Warm-up:</strong> ${esc(meta.warmup)}</div>`:''}${meta.notes?`<div class="coach-note"><strong>Coach:</strong> ${esc(meta.notes)}</div>`:''}`;
   }
   function setRows(s,ex,meta,prev,readOnly,compact=false){
     const plans=progressionPlan(meta,prev); const bw=isBodyweightExercise(meta,ex);
     return ex.sets.map((set,idx)=>{
-      const result=resultForSet(meta,plans[idx],set); const eff=effectiveLoad(s,ex,meta,set.weight); const reps=numeric(set.reps);
-      const effText=bw&&eff!==null&&reps!==null?` • Effective ${fmtWeight(eff)} lb`:'';
+      const result=resultForSet(meta,plans[idx],set); const eff=effectiveLoad(s,ex,meta,set.weight); const reps=numeric(set.reps); const prs=exercisePRs(s,ex.name); const ww=numeric(set.weight); const prBits=[]; if(ww!==null&&(prs.maxWeight===null||ww>prs.maxWeight))prBits.push('🏆 Weight PR'); if(reps!==null&&(prs.maxReps===null||reps>prs.maxReps))prBits.push('🏆 Rep PR');
+      const effText=(bw&&eff!==null&&reps!==null?` • Effective ${fmtWeight(eff)} lb`:'')+(prBits.length?` • ${prBits.join(' • ')}`:'');
       return `<div class="set-wrap"><div class="set-row ${bw?'bodyweight-set':''}" data-ex="${esc(ex.exerciseId)}" data-set="${idx}"><div class="set-num">${idx+1}</div><div class="weight-cell"><div class="weight-input-wrap"><input ${readOnly?'disabled':''} inputmode="decimal" type="number" step="0.5" class="weight" value="${esc(set.weight)}" placeholder="${bw?'0 / -60 / +25':'0'}">${bw&&!readOnly?`<button type="button" class="sign-toggle" aria-label="toggle assistance or added weight sign">+/−</button>`:''}</div><div class="unit">${bw?'negative = assisted • positive = weighted':'lb'}</div></div><div><input ${readOnly?'disabled':''} inputmode="numeric" type="number" step="1" class="reps" value="${esc(set.reps)}" placeholder="0"><div class="unit">reps</div></div><button ${readOnly?'disabled':''} class="check ${set.done?'done':''}" aria-label="set done">${set.done?'✓':'○'}</button></div><div class="set-result ${result.status}" data-result-for="${esc(ex.exerciseId)}-${idx}">${esc(result.label+effText)}</div></div>`;
     }).join('');
   }
   function renderSingleExercise(s,ex,meta,readOnly){
     const prev=previousExercise(s,ex.name);
-    return `<div class="exercise">${exHeader(meta,ex)}<hr>${previousHtml(prev)}${coachingHtml(meta,prev)}${setRows(s,ex,meta,prev,readOnly)}</div>`;
+    return `<div class="exercise">${exHeader(meta,ex)}${prHtml(s,ex)}${recentHistoryHtml(s,ex)}${coachingHtml(meta,prev)}${goalTrackerHtml(s,ex,meta,prev)}${setRows(s,ex,meta,prev,readOnly)}<div class="exercise-notes"><div class="label">Exercise Notes</div><textarea class="ex-note" data-ex-note="${esc(ex.exerciseId)}" ${readOnly?'disabled':''} placeholder="Notes for ${esc(ex.name)}">${esc(ex.notes||'')}</textarea></div></div>`;
   }
   function renderSuperset(s,items,readOnly){
     const [a,b]=items; const prevA=previousExercise(s,a[0].name), prevB=previousExercise(s,b[0].name);
-    return `<div class="exercise superset"><div class="pill">Superset ${esc(a[1].group)}</div><div>${exHeader(a[1],a[0])}${previousHtml(prevA)}${coachingHtml(a[1],prevA)}${setRows(s,a[0],a[1],prevA,readOnly,true)}</div><hr><div>${exHeader(b[1],b[0])}${previousHtml(prevB)}${coachingHtml(b[1],prevB)}${setRows(s,b[0],b[1],prevB,readOnly,true)}</div></div>`;
+    const block=(pair,prev)=>`<div class="super-col">${exHeader(pair[1],pair[0])}${prHtml(s,pair[0])}${recentHistoryHtml(s,pair[0])}${coachingHtml(pair[1],prev)}${goalTrackerHtml(s,pair[0],pair[1],prev)}${setRows(s,pair[0],pair[1],prev,readOnly,true)}<div class="exercise-notes"><div class="label">Exercise Notes</div><textarea class="ex-note" data-ex-note="${esc(pair[0].exerciseId)}" ${readOnly?'disabled':''}>${esc(pair[0].notes||'')}</textarea></div></div>`;
+    return `<div class="exercise superset"><div class="pill">Superset ${esc(a[1].group)}</div><div class="superset-grid">${block(a,prevA)}${block(b,prevB)}</div></div>`;
   }
   function nextExerciseName(s,exerciseId){ const i=s.exercises.findIndex(e=>e.exerciseId===exerciseId); return i>=0&&i<s.exercises.length-1?s.exercises[i+1].name:'Core / Finish'; }
 
@@ -413,6 +493,7 @@
       const resultEl=row.parentElement.querySelector('.set-result'); const bw=isBodyweightExercise(meta,ex);
       const update=()=>{ set.weight=weight.value; set.reps=reps.value; const result=resultForSet(meta,plans[idx],set); const eff=effectiveLoad(s,ex,meta,set.weight); const rr=numeric(set.reps); if(resultEl){resultEl.className=`set-result ${result.status}`;resultEl.textContent=result.label+(bw&&eff!==null&&rr!==null?` • Effective ${fmtWeight(eff)} lb`:'');} saveState(); updateVolume(s); };
       weight.addEventListener('input',update); reps.addEventListener('input',update);
+      document.querySelectorAll('.ex-note').forEach(n=>n.oninput=()=>{const ee=s.exercises.find(x=>x.exerciseId===n.dataset.exNote);if(ee){ee.notes=n.value;saveState();}});
       row.querySelector('.sign-toggle')?.addEventListener('click',()=>{ const n=numeric(weight.value); if(n===null||n===0){toast('Enter the assistance/load amount, then tap ±');weight.focus();return;} weight.value=String(-n); weight.focus(); update(); });
       const commit=()=>{ if(bw&&weight.value.trim()==='')weight.value='0'; update(); if((bw||weight.value!=='')&&reps.value!==''){ set.done=true;check.classList.add('done');check.textContent='✓';saveState(); maybeAutoRest(s,ex,meta,idx); } };
       reps.addEventListener('change',commit); reps.addEventListener('blur',commit);
@@ -426,22 +507,28 @@
   function maybeAutoRest(s,ex,meta,setIdx){
     const key=`${s.id}|${ex.exerciseId}|${setIdx}`; if(autoRestTriggered.has(key))return;
     const reps=numeric(ex.sets[setIdx]?.reps), weight=numeric(ex.sets[setIdx]?.weight); if(reps===null||weight===null)return;
+    const exIndex=s.exercises.findIndex(e=>e.exerciseId===ex.exerciseId);
     if(meta.group){
-      const partner=supersetPartner(s,ex); if(!partner)return; const exIndex=s.exercises.findIndex(e=>e.exerciseId===ex.exerciseId), partnerIndex=s.exercises.findIndex(e=>e.exerciseId===partner.exerciseId);
-      // Only the second movement in the pair starts rest.
+      const partner=supersetPartner(s,ex); if(!partner)return;
+      const partnerIndex=s.exercises.findIndex(e=>e.exerciseId===partner.exerciseId);
       if(exIndex<partnerIndex)return;
       const partnerSet=partner.sets[setIdx]; if(!partnerSet||numeric(partnerSet.reps)===null||numeric(partnerSet.weight)===null)return;
       autoRestTriggered.add(key);
-      if(setIdx>=Math.min(ex.sets.length,partner.sets.length)-1){toast(`Next: ${nextExerciseName(s,ex.exerciseId)}`);return;}
-      startRest(parseRestSeconds(meta.rest),`${partner.name} • Set ${setIdx+2}`); return;
+      const finalWorkoutSet=exIndex===s.exercises.length-1 && setIdx===ex.sets.length-1;
+      if(finalWorkoutSet){toast('Final set complete');return;}
+      const next=setIdx<Math.min(ex.sets.length,partner.sets.length)-1?`${partner.name} • Set ${setIdx+2}`:nextExerciseName(s,ex.exerciseId);
+      startRest(parseRestSeconds(meta.rest),next); return;
     }
     autoRestTriggered.add(key);
-    if(setIdx>=ex.sets.length-1){toast(`Next: ${nextExerciseName(s,ex.exerciseId)}`);return;}
-    startRest(parseRestSeconds(meta.rest),`${ex.name} • Set ${setIdx+2}`);
+    const finalWorkoutSet=exIndex===s.exercises.length-1 && setIdx===ex.sets.length-1;
+    if(finalWorkoutSet){toast('Final set complete');return;}
+    const next=setIdx<ex.sets.length-1?`${ex.name} • Set ${setIdx+2}`:nextExerciseName(s,ex.exerciseId);
+    startRest(parseRestSeconds(meta.rest),next);
   }
   function syncSessionFromInputs(){
     const s=activeSession(); if(!s||s.status==='completed') return;
     document.querySelectorAll('.set-row').forEach(row=>{const ex=s.exercises.find(e=>e.exerciseId===row.dataset.ex); if(!ex)return; const set=ex.sets[Number(row.dataset.set)]; set.weight=row.querySelector('.weight').value; set.reps=row.querySelector('.reps').value; set.done=row.querySelector('.check').classList.contains('done');});
+    document.querySelectorAll('.ex-note').forEach(n=>{const ee=s.exercises.find(x=>x.exerciseId===n.dataset.exNote);if(ee)ee.notes=n.value;});
     const c=document.getElementById('comments'); if(c) s.comments=c.value;
   }
   function updateVolume(s){ syncSessionFromInputs(); const el=document.getElementById('volumeTotal'); if(el) el.textContent=L.formatVolume(sessionVolume(s)); }
@@ -465,17 +552,36 @@
 
   function attemptFinish(s){
     syncSessionFromInputs();
-    const incomplete=s.exercises.some(ex=>ex.sets.some(set=>!set.weight&&!set.reps));
-    if(incomplete && !confirm('Some sets are blank. Finish this workout anyway?')) return;
+    const missing=[];
+    s.exercises.forEach(ex=>ex.sets.forEach((set,i)=>{if(String(set.weight??'').trim()===''||String(set.reps??'').trim()==='')missing.push(`${ex.name} — Set ${i+1}`);}));
+    if(missing.length){
+      const shown=missing.slice(0,8).join('\\n');
+      if(!confirm(`Workout Not Complete
+
+${shown}${missing.length>8?`
+…and ${missing.length-8} more`:''}
+
+OK = save/continue as partial
+Cancel = return to workout`))return;
+      saveState(); toast('Partial workout saved'); return;
+    }
     const core=P.core[`${s.phase}-${s.slot}`];
     if(core && s.coreStatus==='pending'){ openCore(s); return; }
+    if(!confirm(`Complete ${s.workoutName}?
+
+This will mark the workout complete. You can still edit today's or yesterday's workout.`))return;
     completeSession(s);
   }
-  function completeSession(s){ s.status='completed';s.completedAt=new Date().toISOString();saveState();toast('Workout completed');setTimeout(()=>go('home'),500); }
-
-  function openWarmup(s,manual=false){
-    const moves=P.warmups[String(s.slot)]||[]; if(!moves.length){s.warmupStatus='skipped';saveState();return;}
-    guideSequence({title:'Guided Warm-Up',subtitle:s.workoutName,moves:moves.map(m=>({name:m.name,type:m.type,value:m.value})),prepare:5,onComplete:()=>{s.warmupStatus='completed';saveState();toast('Warm-up complete');renderWorkout();},onSkip:()=>{s.warmupStatus='skipped';saveState();renderWorkout();}});
+  function completeSession(s){
+    s.status='completed';s.completedAt=new Date().toISOString();saveState();
+    state.settings.lastCompletedSessionId=s.id; view='complete'; state.settings.lastView=view; saveState(); render();
+  }
+  function renderCompletion(){
+    const s=sessionById(state.settings.lastCompletedSessionId);
+    if(!s){go('home');return;}
+    const sets=s.exercises.reduce((n,e)=>n+e.sets.filter(x=>String(x.weight??'').trim()!==''||String(x.reps??'').trim()!=='').length,0);
+    app.innerHTML=headerHtml('Workout Complete','Saved safely')+`<div class="card hero"><div class="big">Great work.</div><div class="value" style="margin-top:8px">${esc(s.workoutName)}</div><hr style="border-color:#374151"><div class="summary-grid"><div><div class="label">Time</div><strong>${formatElapsed(workoutElapsedSeconds(s))}</strong></div><div><div class="label">Volume</div><strong>${L.formatVolume(sessionVolume(s))} lb</strong></div><div><div class="label">Sets Saved</div><strong>${sets}</strong></div><div><div class="label">Core</div><strong>${esc(s.coreStatus||'—')}</strong></div></div></div><button id="completeDone" class="btn primary full">Done</button>${navHtml('')}`;
+    document.getElementById('completeDone').onclick=()=>go('home');bindNav();
   }
   function openCore(s){
     const c=P.core[`${s.phase}-${s.slot}`]; if(!c){completeSession(s);return;}
@@ -488,19 +594,25 @@
   }
 
   function guideSequence(cfg){
-    stopGuide(false); let idx=-1, paused=false, left=cfg.prepare||0, phase='prepare';
+    stopGuide(false); let idx=0, paused=false, left=cfg.prepare||5, phase='prepare';
     const overlay=document.createElement('div'); overlay.className='overlay'; overlay.id='guideOverlay'; document.body.appendChild(overlay);
+    const current=()=>cfg.moves[idx];
     const draw=()=>{
-      const move=idx>=0?cfg.moves[idx]:cfg.moves[0];
-      overlay.innerHTML=`<div class="overlay-card"><div class="label">${esc(cfg.title)}</div><h2>${phase==='prepare'?'PREPARE FOR':esc(move?.name||'Done')}</h2><div class="muted">${esc(phase==='prepare'?(cfg.moves[0]?.name||''):move?.label||cfg.subtitle||'')}</div>${(phase==='prepare'||move?.type==='time')?`<div class="countdown">${left}</div>`:`<div class="countdown" style="font-size:42px">${esc(move?.value||'Done')}</div>`}<div class="grid2"><button id="guidePause" class="btn ghost">${paused?'Resume':'Pause'}</button><button id="guideNext" class="btn primary">${move?.type==='reps'&&phase!=='prepare'?'Done':'Skip / Next'}</button></div><button id="guideSkipAll" class="btn full" style="margin-top:10px">Skip ${esc(cfg.title)}</button></div>`;
-      document.getElementById('guidePause').onclick=()=>{paused=!paused;draw()}; document.getElementById('guideNext').onclick=advance; document.getElementById('guideSkipAll').onclick=()=>{stopGuide();cfg.onSkip?.()};
+      const move=current();
+      overlay.innerHTML=`<div class="overlay-card"><div class="label">${esc(cfg.title)}</div><h2>${phase==='prepare'?'PREPARE FOR':esc(move?.name||'Done')}</h2><div class="muted">${esc(phase==='prepare'?(move?.name||''):move?.label||cfg.subtitle||'')}</div>${phase==='prepare'||move?.type==='time'?`<div class="countdown">${left}</div>`:`<div class="countdown reps-cue">${esc(move?.value||'Done')}</div>`}<div class="grid2"><button id="guidePause" class="btn ghost">${paused?'Resume':'Pause'}</button><button id="guideNext" class="btn primary">${move?.type==='reps'&&phase==='move'?'Done':'Skip / Next'}</button></div><button id="guideSkipAll" class="btn full" style="margin-top:10px">Skip ${esc(cfg.title)}</button></div>`;
+      document.getElementById('guidePause').onclick=()=>{paused=!paused;draw()};
+      document.getElementById('guideNext').onclick=advance;
+      document.getElementById('guideSkipAll').onclick=()=>{stopGuide();cfg.onSkip?.()};
     };
     const advance=()=>{
-      if(phase==='prepare'){phase='move';idx=0;} else idx++;
+      if(phase==='prepare'){
+        phase='move'; const m=current(); left=m?.type==='time'?Number(m.value):0; draw(); return;
+      }
+      idx++;
       if(idx>=cfg.moves.length){stopGuide();cfg.onComplete?.();return;}
-      const m=cfg.moves[idx]; left=m.type==='time'?Number(m.value):0; draw();
+      phase='prepare'; left=cfg.prepare||5; draw();
     };
-    const tick=()=>{ if(paused)return; if(phase==='prepare'||(idx>=0&&cfg.moves[idx]?.type==='time')){left--; if(left<=0)advance();else draw();} };
+    const tick=()=>{if(paused)return; const m=current(); if(phase==='prepare'||m?.type==='time'){left--;if(left<=0)advance();else draw();}};
     draw(); guideTimer=setInterval(tick,1000);
   }
   function stopGuide(remove=true){if(guideTimer){clearInterval(guideTimer);guideTimer=null;} if(remove)document.getElementById('guideOverlay')?.remove();}
@@ -525,7 +637,7 @@
       <div class="card"><div class="label">Active Profile</div><select id="profileSelect">${state.profiles.map(x=>`<option value="${esc(x.id)}" ${x.id===state.activeProfileId?'selected':''}>${esc(x.name)}</option>`).join('')}</select><div class="label" style="margin-top:14px">Program Start Date</div><input id="startDate" type="date" value="${esc(p.startDate||'')}"><div class="label" style="margin-top:14px">Current Body Weight (lb)</div><input id="bodyWeight" inputmode="decimal" type="number" step="0.1" value="${esc(p.bodyWeight||'')}" placeholder="Used for pull-ups / dips"><p class="small muted">The calendar controls Week 1–12. Missing a workout does not freeze program progress.</p></div>
       <div class="card"><div class="label">Add Profile</div><div class="grid2"><input id="newProfile" placeholder="Name"><button id="addProfile" class="btn primary">Add</button></div></div>
       <div class="card"><div class="label">Backup / Migration</div><p class="small muted">Data is stored locally on this device. Export a backup before clearing browser data or changing phones.</p><div class="grid2"><button id="exportData" class="btn ghost">Export JSON</button><button id="importData" class="btn ghost">Import JSON</button></div><button id="importWebLog" class="btn ghost full" style="margin-top:10px">Import Web Workout Log CSV</button><input id="importFile" class="hidden" type="file" accept="application/json"><input id="webLogFile" class="hidden" type="file" accept=".csv,text/csv"></div>
-      <div class="card"><div class="label">Mobile V1.4.4</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Rest timer auto-starts after every set except the final set of the workout<br>✓ Bulgarian Split Squat volume counts both legs<br>✓ Today's and yesterday's completed workouts can be edited in place<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
+      <div class="card"><div class="label">Mobile V1.5</div><p class="small">✓ Signed assisted/weighted bodyweight entry (-60 / +25) with body-weight effective load<br>✓ Phase 1 Slot 1 progression is isolated W1↔W3 and W2↔W4<br>✓ Rest timer auto-starts after every set except the final set of the workout<br>✓ Bulgarian Split Squat volume counts both legs<br>✓ Today's and yesterday's completed workouts can be edited in place<br>✓ Re-enter completed workouts as protected, independent sessions<br>✓ V1.3 rest timer, coaching, and progression behavior retained</p></div>
       ${navHtml('settings')}`;
     document.getElementById('profileSelect').onchange=e=>{state.activeProfileId=e.target.value;state.activeSessionId=null;selectedWeek=null;saveState();renderSettings()};
     document.getElementById('startDate').onchange=e=>{p.startDate=e.target.value;selectedWeek=null;saveState();toast('Program calendar updated')};

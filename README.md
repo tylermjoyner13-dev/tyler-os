@@ -107,3 +107,17 @@ The Web Workout Log importer accepts both `Exercise` and the legacy `Excercise` 
 - Fixed Delete Workout: the V1.4.3 button was displayed but its click handler was not attached.
 - Partial/in-progress workouts can now be permanently deleted after confirmation.
 - Completed workouts remain protected.
+
+
+## Mobile V1.5 — Web Parity Build
+Restores the major guided-training features from the V6.3.5 web app while retaining the mobile-only improvements.
+- One exercise/superset at a time, progress bar, Previous/Next
+- Workout elapsed timer and live volume
+- Ramp instructions, coach notes, PRs, recent history, progression, Today's Goal
+- Exercise notes and workout comments
+- Compact side-by-side supersets
+- PREPARE FOR transitions between guided warm-up/core movements
+- Correct end-of-exercise rest behavior, with no timer after the final workout set
+- Detailed partial-workout validation, completion confirmation, completion summary
+- Arbitrary actual training date selection
+- Fixes Delete Workout to use the real mobile state store
