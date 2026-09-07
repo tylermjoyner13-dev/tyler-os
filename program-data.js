@@ -1074,6 +1074,7 @@ window.TYLER_PROGRAM = {
           "group": "A",
           "groupType": "superset",
           "name": "Pull-Ups / Lat Pulldown",
+          "bodyweightLoad": true,
           "sets": 3,
           "minReps": 10,
           "topReps": 12,

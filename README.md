@@ -121,3 +121,14 @@ Restores the major guided-training features from the V6.3.5 web app while retain
 - Detailed partial-workout validation, completion confirmation, completion summary
 - Arbitrary actual training date selection
 - Fixes Delete Workout to use the real mobile state store
+
+
+## Mobile V1.5.1 — Audit Correction Build
+- Advances Home Next Scheduled past completed/skipped scheduled sessions
+- Makes Recent Workouts directly openable
+- Separates View/Edit and Repeat for completed workouts
+- Seeds first new-phase goals from prior-phase performance of the same exercise
+- Updates Goal/PR feedback live while entering sets
+- Restores automatic/manual Guided Warm-Up
+- Allows signed assisted/weighted bodyweight entry on iPhone and across phases
+- Keeps P1 Slot 1 Week 1/3 and Week 2/4 variants tied to the selected program week, independent of actual training date

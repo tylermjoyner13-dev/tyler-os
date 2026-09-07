@@ -98,7 +98,7 @@
       ${[['home','Home'],['workouts','Workouts'],['review','Weekly'],['settings','Settings']].map(([v,n])=>`<button data-nav="${v}" class="${active===v?'active':''}">${n}</button>`).join('')}
     </nav>`;
   }
-  function headerHtml(title='Tyler OS',sub='Mobile V1.5'){
+  function headerHtml(title='Tyler OS',sub='Mobile V1.5.1'){
     return `<div class="header"><div class="brand"><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><span class="pill gray">${esc(activeProfile().name)}</span></div>`;
   }
   function bindNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); }
@@ -109,10 +109,24 @@
     const week=L.programWeek(p.startDate,date);
     const phase=L.phaseForWeek(week);
     const phaseWeek=L.phaseWeek(week);
-    const next=L.nextScheduledSlot(date);
-    const nextWeek=L.programWeek(p.startDate,next.date);
-    const nextPhase=L.phaseForWeek(nextWeek);
-    return {week,phase,phaseWeek,nextSlot:next.slot,nextDate:next.date,nextWeek,nextPhase,workout:workoutBy(nextPhase,next.slot)};
+    // Find the first scheduled slot today or later that is not already completed/skipped.
+    // This keeps a completed workout from remaining on Home as “Next Scheduled”.
+    const start=new Date(date); start.setHours(0,0,0,0);
+    let next=null;
+    for(let i=0;i<21;i++){
+      const d=new Date(start); d.setDate(start.getDate()+i);
+      const slot=L.scheduledSlotForDate(d); if(!slot)continue;
+      const w=L.programWeek(p.startDate,d), ph=L.phaseForWeek(w), workout=workoutBy(ph,slot);
+      const existing=workout?sessionForWeekWorkout(p.id,w,workout.id):null;
+      if(existing?.status==='completed'||existing?.status==='skipped')continue;
+      next={slot,date:d,week:w,phase:ph,workout}; break;
+    }
+    if(!next){
+      const fallback=L.nextScheduledSlot(date);
+      const w=L.programWeek(p.startDate,fallback.date), ph=L.phaseForWeek(w);
+      next={slot:fallback.slot,date:fallback.date,week:w,phase:ph,workout:workoutBy(ph,fallback.slot)};
+    }
+    return {week,phase,phaseWeek,nextSlot:next.slot,nextDate:next.date,nextWeek:next.week,nextPhase:next.phase,workout:next.workout};
   }
 
   function render(){
@@ -156,11 +170,12 @@
         <div class="week-grid" style="margin-top:12px">${weekStatuses.map(x=>`<div class="day-chip ${x.status}">${x.short}<br>${x.status==='done'?'✓':x.status==='partial'?'…':x.status==='missed'?'—':'•'}</div>`).join('')}</div>
       </div>
       <div class="section-title">Recent Workouts</div>
-      ${recent.length?recent.map(s=>`<div class="workout-card"><div class="row between"><div><strong>${esc(s.workoutName)}</strong><div class="small muted">${fmtDate(s.date)}</div></div><span class="pill green">${L.formatVolume(sessionVolume(s))} lb</span></div>${s.comments?`<div class="comment">${esc(s.comments)}</div>`:''}</div>`).join(''):`<div class="card"><span class="muted">No completed workouts yet on this device.</span></div>`}
+      ${recent.length?recent.map(s=>`<button class="workout-card recent-open" data-session="${esc(s.id)}" style="width:100%;text-align:left"><div class="row between"><div><strong>${esc(s.workoutName)}</strong><div class="small muted">${fmtDate(s.date)}</div></div><span class="pill green">${L.formatVolume(sessionVolume(s))} lb</span></div>${s.comments?`<div class="comment">${esc(s.comments)}</div>`:''}</button>`).join(''):`<div class="card"><span class="muted">No completed workouts yet on this device.</span></div>`}
       ${navHtml('home')}`;
     document.getElementById('startNext').onclick=()=>startWorkout(info.workout.id,targetDate,info.nextWeek);
     document.getElementById('skipNext').onclick=()=>skipWorkout(info.workout.id,targetDate,info.nextWeek);
     document.getElementById('openReview').onclick=()=>{selectedWeek=info.week;go('review')};
+    document.querySelectorAll('.recent-open').forEach(b=>b.onclick=()=>{const ss=sessionById(b.dataset.session);if(ss)openCompletedSession(ss);});
     bindNav();
   }
 
@@ -185,7 +200,7 @@
       <div class="card tight"><div class="row between"><button id="prevW" class="btn sm ghost" ${week<=1?'disabled':''}>←</button><div style="text-align:center"><div class="label">Program Week</div><div class="value">${week} of 12</div></div><button id="nextW" class="btn sm ghost" ${week>=12?'disabled':''}>→</button></div><div class="label" style="margin-top:12px">Start selected workout on date</div><input id="chosenWorkoutDate" type="date" value="${L.localDateKey(today())}"><div class="small muted">Leave this as today, or choose another actual training date.</div></div>
       ${[1,2,3,4,5].map(slot=>{
         const w=workoutBy(phase,slot); const d=L.scheduledDateForWeekSlot(p.startDate,week,slot); const dk=L.localDateKey(d); const s=actionSessionForWeekWorkout(p.id,week,w.id); const shownDate=s?.date||dk;
-        return `<div class="workout-card ${L.localDateKey(today())===shownDate?'today':''}"><div class="row between"><div><div class="label">Slot ${slot} • ${esc(w.day)}</div><div class="value">${esc(w.name)}</div><div class="small muted">${fmtDate(shownDate)}${s&&s.date!==dk?' • actually trained':''} • ${w.exercises.length} exercises</div></div>${s?`<span class="pill ${s.status==='completed'?'green':s.status==='partial'?'amber':'red'}">${esc(s.status==='partial'&&s.repeatOfSessionId?'repeat in progress':s.status)}</span>`:''}</div><button class="btn primary full startChosen" data-id="${w.id}" data-date="${s?.date||dk}" data-week="${week}" style="margin-top:10px">${s?.status==='partial'?'Resume':s?.status==='completed'?'View / Repeat':'Start'}</button></div>`;
+        return `<div class="workout-card ${L.localDateKey(today())===shownDate?'today':''}"><div class="row between"><div><div class="label">Slot ${slot} • ${esc(w.day)}</div><div class="value">${esc(w.name)}</div><div class="small muted">${fmtDate(shownDate)}${s&&s.date!==dk?' • actually trained':''} • ${w.exercises.length} exercises</div></div>${s?`<span class="pill ${s.status==='completed'?'green':s.status==='partial'?'amber':'red'}">${esc(s.status==='partial'&&s.repeatOfSessionId?'repeat in progress':s.status)}</span>`:''}</div>${s?.status==='completed'?`<div class="grid2" style="margin-top:10px"><button class="btn ghost viewCompleted" data-session="${s.id}">View${canEditCompletedSession(s)?' / Edit':''}</button><button class="btn primary repeatCompleted" data-session="${s.id}" data-id="${w.id}" data-week="${week}">Repeat</button></div>`:`<button class="btn primary full startChosen" data-id="${w.id}" data-date="${s?.date||dk}" data-week="${week}" style="margin-top:10px">${s?.status==='partial'?'Resume':'Start'}</button>`}</div>`;
       }).join('')}
       ${navHtml('workouts')}`;
     document.getElementById('prevW').onclick=()=>{selectedWeek=Math.max(1,week-1);renderWorkouts()};
@@ -193,9 +208,11 @@
     document.querySelectorAll('.startChosen').forEach(b=>b.onclick=()=>{
       const chosen=document.getElementById('chosenWorkoutDate')?.value;
       const date=chosen||b.dataset.date;
-      const actualWeek=L.programWeek(p.startDate,L.parseLocalDate(date));
-      startWorkout(b.dataset.id,date,actualWeek);
+      // The workout card's selected program week controls phase/variant. The chosen date is only the actual training date.
+      startWorkout(b.dataset.id,date,Number(b.dataset.week));
     });
+    document.querySelectorAll('.viewCompleted').forEach(b=>b.onclick=()=>{const ss=sessionById(b.dataset.session);if(ss)openCompletedSession(ss);});
+    document.querySelectorAll('.repeatCompleted').forEach(b=>b.onclick=()=>{const original=sessionById(b.dataset.session),w=workoutById(b.dataset.id);if(!original||!w)return;const chosen=document.getElementById('chosenWorkoutDate')?.value||L.localDateKey(today());const repeat=createRepeatSession(w,chosen,Number(b.dataset.week),original);if(!repeat)return;state.activeSessionId=repeat.id;view='workout';saveState();render();if(repeat.warmupStatus==='pending')setTimeout(()=>openWarmup(repeat),80);});
     bindNav();
   }
 
@@ -304,6 +321,13 @@
       return oldVariant===targetVariant;
     }).sort((a,b)=>(b.completedAt||b.date).localeCompare(a.completedAt||a.date));
     for(const old of candidates){ const ex=old.exercises.find(e=>L.canonical(e.name)===L.canonical(exName)); if(ex) return {date:old.date,ex}; }
+    // First exposure in a new phase: seed the goal from the most recent completed performance
+    // of the same exercise in the prior phase instead of forcing a blank baseline.
+    if(Number(s.phase)>1){
+      const prior=sessionsForProfile().filter(x=>x.status==='completed'&&x.id!==s.id&&Number(x.phase)<Number(s.phase)&&x.date<s.date)
+        .sort((a,b)=>(b.completedAt||b.date).localeCompare(a.completedAt||a.date));
+      for(const old of prior){ const ex=(old.exercises||[]).find(e=>L.canonical(e.name)===L.canonical(exName)); if(ex) return {date:old.date,ex,phaseSeed:true}; }
+    }
     return null;
   }
 
@@ -391,7 +415,7 @@
   }
   function prHtml(s,ex){
     const pr=exercisePRs(s,ex.name);
-    return `<div class="pr-grid"><div class="pr-box"><div class="label">Weight PR</div><strong>${pr.maxWeight===null?'—':fmtWeight(pr.maxWeight)+' lb'}</strong></div><div class="pr-box"><div class="label">Rep PR</div><strong>${pr.maxReps===null?'—':pr.maxReps+' reps'}</strong></div></div>`;
+    return `<div class="pr-grid" data-pr-for="${esc(ex.exerciseId)}"><div class="pr-box"><div class="label">Weight PR</div><strong>${pr.maxWeight===null?'—':fmtWeight(pr.maxWeight)+' lb'}</strong></div><div class="pr-box"><div class="label">Rep PR</div><strong>${pr.maxReps===null?'—':pr.maxReps+' reps'}</strong></div></div>`;
   }
   function recentHistoryHtml(s,ex){
     const h=historicalExerciseSessions(s,ex.name,3);
@@ -404,7 +428,7 @@
       const r=resultForSet(meta,plans[i],set);
       return r.status==='success'||r.status==='baseline'?'🟩':r.status==='blank'?'⬜':'🟨';
     }).join(' ');
-    return `<div class="goal-box"><div class="row between"><div class="coach-title">Today's Goal</div><div class="goal-squares">${squares}</div></div>${plans.map(p=>`<div class="goal-row"><strong>S${p.set}</strong><span>${esc(p.label)}</span></div>`).join('')}</div>`;
+    return `<div class="goal-box" data-goal-for="${esc(ex.exerciseId)}"><div class="row between"><div class="coach-title">Today's Goal</div><div class="goal-squares">${squares}</div></div>${plans.map(p=>`<div class="goal-row"><strong>S${p.set}</strong><span>${esc(p.label)}</span></div>`).join('')}</div>`;
   }
   function workoutElapsedSeconds(s){
     const start=new Date(s.startedAt||Date.now()).getTime();
@@ -431,12 +455,12 @@
       <div class="volume-bar"><div class="row between"><div><div class="label" style="color:#9ca3af">Workout Volume</div><div class="big"><span id="volumeTotal">${L.formatVolume(sessionVolume(s))}</span> lb</div></div><div style="text-align:right"><div class="label" style="color:#9ca3af">Workout Time</div><div class="clock" id="workoutClock">${formatElapsed(workoutElapsedSeconds(s))}</div></div></div></div>
       <div class="step-card"><div class="row between"><strong>${stepLabel} ${s.currentStep+1} of ${groups.length}</strong><span class="small muted">${progress}%</span></div><div class="progress"><div style="width:${progress}%"></div></div></div>
       ${s.exercises.some(ex=>isBodyweightExercise(metaForExercise(s,ex),ex))?`<div class="card tight bodyweight-card"><div class="row between"><div><div class="label">Current Body Weight</div><div class="value">${esc(s.bodyWeight||'—')} lb</div></div>${!readOnly?`<button id="changeBodyWeight" class="btn sm ghost">Change</button>`:''}</div><p class="small muted">Enter <strong>0</strong> for bodyweight, <strong>-60</strong> for 60 lb assistance, or <strong>+25</strong> for 25 lb added weight.</p></div>`:''}
-      ${readOnly?`<div class="card tight"><span class="pill green">Completed workout — protected</span><p class="small muted" style="margin-bottom:0">Starting it again creates a separate session. These completed sets will not be changed.</p></div>`:''}
+      ${s.status==='completed'?`<div class="card tight"><span class="pill green">${readOnly?'Completed workout — view only':'Completed workout — editable'}</span><p class="small muted" style="margin-bottom:0">${readOnly?'Use Repeat to create a separate new session.':'Today/yesterday edits save to this completed session. Use Workouts → Repeat for a separate session.'}</p></div>`:''}
       <div class="card tight"><div class="row wrap"><button id="warmBtn" class="btn sm ghost">Guided Warm-Up</button><button id="backHome" class="btn sm ghost">Save & Exit</button></div></div>
       <div id="exerciseList">${step.type==='superset'?renderSuperset(s,step.items,readOnly):renderSingleExercise(s,step.items[0][0],step.items[0][1],readOnly)}</div>
       <div class="step-nav"><button id="prevStep" class="btn ghost" ${s.currentStep===0?'disabled':''}>← Previous</button><button id="nextStep" class="btn primary">${s.currentStep===groups.length-1?'Review / Finish':'Next →'}</button></div>
       <div class="card"><div class="label">Workout Comments</div><textarea id="comments" ${readOnly?'disabled':''} placeholder="How did the workout feel?">${esc(s.comments||'')}</textarea></div>
-      ${!readOnly?`<button id="finishWorkout" class="btn good full">Finish Workout</button>`:`<button id="repeatWorkout" class="btn primary full">Re-enter as New Session</button>`}
+      ${readOnly?`<button id="repeatWorkout" class="btn primary full">Re-enter as New Session</button>`:s.status==='completed'?`<button id="saveCompletedEdits" class="btn good full">Save Changes</button>`:`<button id="finishWorkout" class="btn good full">Finish Workout</button>`}
       <div id="restTimer" class="timer hidden"></div>${s.status!=='completed'?`<div class="danger-zone"><button type="button" class="delete-workout-btn">Delete Workout</button></div>`:''}
       ${navHtml('')}`;
     bindNav(); startWorkoutClock(s);
@@ -449,8 +473,9 @@
     document.getElementById('nextStep').onclick=()=>{syncSessionFromInputs();if(s.currentStep<groups.length-1){s.currentStep++;saveState();renderWorkout();window.scrollTo({top:0,behavior:'smooth'});}else attemptFinish(s);};
     if(!readOnly){
       bindSetInputs(s);
-      document.getElementById('finishWorkout').onclick=()=>attemptFinish(s);
-    } else document.getElementById('repeatWorkout').onclick=()=>{ const repeat=createRepeatSession(w,s.date,s.week,s); if(!repeat)return; state.activeSessionId=repeat.id; view='workout'; saveState(); render(); if(repeat.warmupStatus==='pending')setTimeout(()=>openWarmup(repeat),80); };
+      if(s.status==='completed') document.getElementById('saveCompletedEdits').onclick=()=>{syncSessionFromInputs();saveState();toast('Completed workout updated');go('home');};
+      else document.getElementById('finishWorkout').onclick=()=>attemptFinish(s);
+    } else document.getElementById('repeatWorkout').onclick=()=>{ const repeat=createRepeatSession(w,L.localDateKey(today()),s.week,s); if(!repeat)return; state.activeSessionId=repeat.id; view='workout'; saveState(); render(); if(repeat.warmupStatus==='pending')setTimeout(()=>openWarmup(repeat),80); };
   }
 
   function renderExerciseBlocks(s,w,readOnly){
@@ -470,7 +495,7 @@
     return ex.sets.map((set,idx)=>{
       const result=resultForSet(meta,plans[idx],set); const eff=effectiveLoad(s,ex,meta,set.weight); const reps=numeric(set.reps); const prs=exercisePRs(s,ex.name); const ww=numeric(set.weight); const prBits=[]; if(ww!==null&&(prs.maxWeight===null||ww>prs.maxWeight))prBits.push('🏆 Weight PR'); if(reps!==null&&(prs.maxReps===null||reps>prs.maxReps))prBits.push('🏆 Rep PR');
       const effText=(bw&&eff!==null&&reps!==null?` • Effective ${fmtWeight(eff)} lb`:'')+(prBits.length?` • ${prBits.join(' • ')}`:'');
-      return `<div class="set-wrap"><div class="set-row ${bw?'bodyweight-set':''}" data-ex="${esc(ex.exerciseId)}" data-set="${idx}"><div class="set-num">${idx+1}</div><div class="weight-cell"><div class="weight-input-wrap"><input ${readOnly?'disabled':''} inputmode="decimal" type="number" step="0.5" class="weight" value="${esc(set.weight)}" placeholder="${bw?'0 / -60 / +25':'0'}">${bw&&!readOnly?`<button type="button" class="sign-toggle" aria-label="toggle assistance or added weight sign">+/−</button>`:''}</div><div class="unit">${bw?'negative = assisted • positive = weighted':'lb'}</div></div><div><input ${readOnly?'disabled':''} inputmode="numeric" type="number" step="1" class="reps" value="${esc(set.reps)}" placeholder="0"><div class="unit">reps</div></div><button ${readOnly?'disabled':''} class="check ${set.done?'done':''}" aria-label="set done">${set.done?'✓':'○'}</button></div><div class="set-result ${result.status}" data-result-for="${esc(ex.exerciseId)}-${idx}">${esc(result.label+effText)}</div></div>`;
+      return `<div class="set-wrap"><div class="set-row ${bw?'bodyweight-set':''}" data-ex="${esc(ex.exerciseId)}" data-set="${idx}"><div class="set-num">${idx+1}</div><div class="weight-cell"><div class="weight-input-wrap"><input ${readOnly?'disabled':''} inputmode="decimal" type="${bw?'text':'number'}" ${bw?'pattern="[+-]?[0-9]*[.]?[0-9]*"':'step="0.5"'} class="weight" value="${esc(set.weight)}" placeholder="${bw?'0 / -60 / +25':'0'}">${bw&&!readOnly?`<button type="button" class="sign-toggle" aria-label="toggle assistance or added weight sign">+/−</button>`:''}</div><div class="unit">${bw?'negative = assisted • positive = weighted':'lb'}</div></div><div><input ${readOnly?'disabled':''} inputmode="numeric" type="number" step="1" class="reps" value="${esc(set.reps)}" placeholder="0"><div class="unit">reps</div></div><button ${readOnly?'disabled':''} class="check ${set.done?'done':''}" aria-label="set done">${set.done?'✓':'○'}</button></div><div class="set-result ${result.status}" data-result-for="${esc(ex.exerciseId)}-${idx}">${esc(result.label+effText)}</div></div>`;
     }).join('');
   }
   function renderSingleExercise(s,ex,meta,readOnly){
@@ -491,7 +516,7 @@
       const ex=s.exercises.find(e=>e.exerciseId===row.dataset.ex); const idx=Number(row.dataset.set); const set=ex.sets[idx]; const meta=metaForExercise(s,ex); const prev=previousExercise(s,ex.name); const plans=progressionPlan(meta,prev);
       const weight=row.querySelector('.weight'), reps=row.querySelector('.reps'), check=row.querySelector('.check');
       const resultEl=row.parentElement.querySelector('.set-result'); const bw=isBodyweightExercise(meta,ex);
-      const update=()=>{ set.weight=weight.value; set.reps=reps.value; const result=resultForSet(meta,plans[idx],set); const eff=effectiveLoad(s,ex,meta,set.weight); const rr=numeric(set.reps); if(resultEl){resultEl.className=`set-result ${result.status}`;resultEl.textContent=result.label+(bw&&eff!==null&&rr!==null?` • Effective ${fmtWeight(eff)} lb`:'');} saveState(); updateVolume(s); };
+      const update=()=>{ set.weight=weight.value; set.reps=reps.value; const result=resultForSet(meta,plans[idx],set); const eff=effectiveLoad(s,ex,meta,set.weight); const rr=numeric(set.reps); if(resultEl){resultEl.className=`set-result ${result.status}`;resultEl.textContent=result.label+(bw&&eff!==null&&rr!==null?` • Effective ${fmtWeight(eff)} lb`:'');} const goal=document.querySelector(`[data-goal-for="${CSS.escape(ex.exerciseId)}"]`); if(goal){const tmp=document.createElement('div');tmp.innerHTML=goalTrackerHtml(s,ex,meta,prev);goal.replaceWith(tmp.firstElementChild);} const pr=document.querySelector(`[data-pr-for="${CSS.escape(ex.exerciseId)}"]`); if(pr){const tmp=document.createElement('div');tmp.innerHTML=prHtml(s,ex);pr.replaceWith(tmp.firstElementChild);} saveState(); updateVolume(s); };
       weight.addEventListener('input',update); reps.addEventListener('input',update);
       document.querySelectorAll('.ex-note').forEach(n=>n.oninput=()=>{const ee=s.exercises.find(x=>x.exerciseId===n.dataset.exNote);if(ee){ee.notes=n.value;saveState();}});
       row.querySelector('.sign-toggle')?.addEventListener('click',()=>{ const n=numeric(weight.value); if(n===null||n===0){toast('Enter the assistance/load amount, then tap ±');weight.focus();return;} weight.value=String(-n); weight.focus(); update(); });
@@ -526,7 +551,7 @@
     startRest(parseRestSeconds(meta.rest),next);
   }
   function syncSessionFromInputs(){
-    const s=activeSession(); if(!s||s.status==='completed') return;
+    const s=activeSession(); if(!s||(s.status==='completed'&&!canEditCompletedSession(s))) return;
     document.querySelectorAll('.set-row').forEach(row=>{const ex=s.exercises.find(e=>e.exerciseId===row.dataset.ex); if(!ex)return; const set=ex.sets[Number(row.dataset.set)]; set.weight=row.querySelector('.weight').value; set.reps=row.querySelector('.reps').value; set.done=row.querySelector('.check').classList.contains('done');});
     document.querySelectorAll('.ex-note').forEach(n=>{const ee=s.exercises.find(x=>x.exerciseId===n.dataset.exNote);if(ee)ee.notes=n.value;});
     const c=document.getElementById('comments'); if(c) s.comments=c.value;
@@ -583,6 +608,14 @@ This will mark the workout complete. You can still edit today's or yesterday's w
     app.innerHTML=headerHtml('Workout Complete','Saved safely')+`<div class="card hero"><div class="big">Great work.</div><div class="value" style="margin-top:8px">${esc(s.workoutName)}</div><hr style="border-color:#374151"><div class="summary-grid"><div><div class="label">Time</div><strong>${formatElapsed(workoutElapsedSeconds(s))}</strong></div><div><div class="label">Volume</div><strong>${L.formatVolume(sessionVolume(s))} lb</strong></div><div><div class="label">Sets Saved</div><strong>${sets}</strong></div><div><div class="label">Core</div><strong>${esc(s.coreStatus||'—')}</strong></div></div></div><button id="completeDone" class="btn primary full">Done</button>${navHtml('')}`;
     document.getElementById('completeDone').onclick=()=>go('home');bindNav();
   }
+  function openWarmup(s,force=false){
+    if(!s) return;
+    if(!force && s.warmupStatus!=='pending') return;
+    const moves=P.warmups?.[String(s.slot)]||[];
+    if(!moves.length){ s.warmupStatus='skipped'; saveState(); toast('No guided warm-up is configured for this workout.'); return; }
+    guideSequence({title:'Guided Warm-Up',subtitle:s.workoutName,moves,prepare:5,onComplete:()=>{s.warmupStatus='completed';saveState();toast('Warm-up complete');},onSkip:()=>{s.warmupStatus='skipped';saveState();toast('Warm-up skipped');}});
+  }
+
   function openCore(s){
     const c=P.core[`${s.phase}-${s.slot}`]; if(!c){completeSession(s);return;}
     const moves=[];
