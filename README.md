@@ -1,3 +1,7 @@
+# Tyler OS Mobile V1.5.4 Diagnostic Recovery
+
+This build preserves the `tylerOSMobileV1` localStorage key. It fixes the recovery boot flag so startup errors from existing local data are shown instead of hanging forever on Starting.
+
 # Tyler OS Mobile V1
 
 Local-first PWA prototype based on the tested Tyler OS web app.

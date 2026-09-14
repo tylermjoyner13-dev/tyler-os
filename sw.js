@@ -1,13 +1,13 @@
-const CACHE = 'tyler-os-mobile-v1-5-3-recovery';
+const CACHE = 'tyler-os-mobile-v1-5-4-diagnostic';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=153',
-  './program-data.js?v=153',
-  './logic.js?v=153',
-  './app.js?v=153',
-  './manifest.webmanifest?v=153',
-  './icons/icon.svg?v=153'
+  './styles.css?v=154',
+  './program-data.js?v=154',
+  './logic.js?v=154',
+  './app.js?v=154',
+  './manifest.webmanifest?v=154',
+  './icons/icon.svg?v=154'
 ];
 
 self.addEventListener('install', event => {
