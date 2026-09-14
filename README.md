@@ -159,3 +159,7 @@ Restores the major guided-training features from the V6.3.5 web app while retain
 - Fixed completed-session rendering crash caused by a call to a nonexistent `TylerLogic.todayKey()` helper.
 - Uses the existing `localDateKey(new Date())` helper instead.
 - Preserves the `tylerOSMobileV1` localStorage key and existing workout data.
+
+
+## V1.5.6 recovery
+Uses new v156 asset URLs to guarantee the installed PWA does not reuse the V1.5.4 app.js asset. Preserves tylerOSMobileV1 localStorage.
