@@ -1,4 +1,4 @@
-const CACHE = 'tyler-os-mobile-v1-5-4-diagnostic';
+const CACHE = 'tyler-os-mobile-v1-5-5-fix';
 const APP_SHELL = [
   './',
   './index.html',

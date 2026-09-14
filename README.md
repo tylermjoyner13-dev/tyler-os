@@ -1,4 +1,4 @@
-# Tyler OS Mobile V1.5.4 Diagnostic Recovery
+# Tyler OS Mobile V1.5.5 Recovery Fix
 
 This build preserves the `tylerOSMobileV1` localStorage key. It fixes the recovery boot flag so startup errors from existing local data are shown instead of hanging forever on Starting.
 
@@ -153,3 +153,9 @@ Restores the major guided-training features from the V6.3.5 web app while retain
 - Adds versioned asset URLs (`?v=153`) to avoid mixed cached JS/CSS.
 - Adds a visible recovery screen if startup fails instead of leaving a blank white screen.
 - Does not intentionally reset or migrate workout history.
+
+
+## V1.5.5 fix
+- Fixed completed-session rendering crash caused by a call to a nonexistent `TylerLogic.todayKey()` helper.
+- Uses the existing `localDateKey(new Date())` helper instead.
+- Preserves the `tylerOSMobileV1` localStorage key and existing workout data.
