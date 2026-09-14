@@ -1,8 +1,65 @@
-const CACHE='tyler-os-mobile-v1-5-2';
-const ASSETS=['./','./index.html','./styles.css','./program-data.js','./logic.js','./app.js','./manifest.webmanifest','./icons/icon.svg'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',e=>{
-  if(e.request.method!=='GET') return;
-  e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r;}).catch(()=>caches.match('./index.html'))));
+const CACHE = 'tyler-os-mobile-v1-5-3-recovery';
+const APP_SHELL = [
+  './',
+  './index.html',
+  './styles.css?v=153',
+  './program-data.js?v=153',
+  './logic.js?v=153',
+  './app.js?v=153',
+  './manifest.webmanifest?v=153',
+  './icons/icon.svg?v=153'
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => Promise.all(APP_SHELL.map(url => fetch(url, { cache: 'reload' })
+        .then(response => {
+          if (!response || !response.ok) throw new Error('Failed to fetch ' + url);
+          return cache.put(url, response.clone());
+        }))))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+  const req = event.request;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  // Navigations are network-first. This prevents an old cached index.html from pinning the installed PWA to a broken build.
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req, { cache: 'no-store' })
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+          return response;
+        })
+        .catch(() => caches.match('./index.html').then(hit => hit || caches.match('./')))
+    );
+    return;
+  }
+
+  // App assets are network-first with cache fallback so updated JS/CSS cannot remain stale indefinitely.
+  event.respondWith(
+    fetch(req, { cache: 'no-store' })
+      .then(response => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(req, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(req))
+  );
 });

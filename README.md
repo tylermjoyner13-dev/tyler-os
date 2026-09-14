@@ -139,3 +139,13 @@ Restores the major guided-training features from the V6.3.5 web app while retain
 - Corrects all visible app version labels to Mobile V1.5.2.
 - Bumps the service-worker cache to force deployment refresh.
 - No workout data reset or intentional training-logic changes from V1.5.1.
+
+
+## Mobile V1.5.3 — PWA Recovery Build
+
+- Keeps the existing `tylerOSMobileV1` localStorage key unchanged.
+- Moves service-worker registration into the inline boot shell so updates can run even if `app.js` fails.
+- Uses a new recovery cache and network-first navigation/assets to prevent a stale installed PWA from being pinned to an old broken shell.
+- Adds versioned asset URLs (`?v=153`) to avoid mixed cached JS/CSS.
+- Adds a visible recovery screen if startup fails instead of leaving a blank white screen.
+- Does not intentionally reset or migrate workout history.
